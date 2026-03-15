@@ -124,6 +124,25 @@ function HelpIcon() {
   );
 }
 
+function MenuIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="h-5 w-5">
+      <path d="M3.5 5.5H16.5" />
+      <path d="M3.5 10H16.5" />
+      <path d="M3.5 14.5H16.5" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="h-5 w-5">
+      <path d="M5.5 5.5L14.5 14.5" />
+      <path d="M14.5 5.5L5.5 14.5" />
+    </svg>
+  );
+}
+
 export default function DashboardLayout() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -139,6 +158,7 @@ export default function DashboardLayout() {
   const [passwordResetMessage, setPasswordResetMessage] = useState("");
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const mustChangePassword = Boolean(user?.force_password_reset);
   const helpMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -185,6 +205,7 @@ export default function DashboardLayout() {
 
   useEffect(() => {
     setIsHelpMenuOpen(false);
+    setIsSidebarOpen(false);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -197,6 +218,18 @@ export default function DashboardLayout() {
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
+
+  useEffect(() => {
+    if (!isSidebarOpen) {
+      document.body.style.overflow = "";
+      return;
+    }
+
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isSidebarOpen]);
 
   useEffect(() => {
     const status = (meQuery.error as any)?.response?.status;
@@ -232,8 +265,30 @@ export default function DashboardLayout() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar-shell">
+      <button
+        aria-hidden={!isSidebarOpen}
+        className={["sidebar-backdrop", isSidebarOpen ? "sidebar-backdrop-open" : ""].join(" ")}
+        onClick={() => setIsSidebarOpen(false)}
+        type="button"
+      />
+
+      <aside className={["sidebar-shell", isSidebarOpen ? "sidebar-shell-open" : ""].join(" ")}>
         <div className="space-y-8">
+          <div className="flex items-center justify-between lg:hidden">
+            <div>
+              <p className="eyebrow">Navigation</p>
+              <p className="text-sm font-semibold text-slate-900">PCM Connect</p>
+            </div>
+            <button
+              className="topbar-icon-button"
+              type="button"
+              aria-label="Close navigation menu"
+              onClick={() => setIsSidebarOpen(false)}
+            >
+              <CloseIcon />
+            </button>
+          </div>
+
           <div className="rounded-[14px] border border-slate-200/80 bg-white/88 p-5 shadow-[0_16px_40px_rgba(18,36,63,0.08)] backdrop-blur">
             <div className="flex items-center gap-4">
               <div className="grid h-16 w-16 place-items-center rounded-[12px]">
@@ -253,6 +308,7 @@ export default function DashboardLayout() {
                 key={item.to}
                 to={item.to}
                 end={item.to === "/"}
+                onClick={() => setIsSidebarOpen(false)}
                 className={({ isActive }) =>
                   [
                     "nav-tile",
@@ -296,11 +352,23 @@ export default function DashboardLayout() {
 
       <main className="content-shell">
         <div className="topbar-shell">
-          <div>
-            <p className="eyebrow">Mission control</p>
-            <h2 className="text-2xl font-semibold text-slate-950">
-              {mustChangePassword && !activeHelpItem ? "Password reset required" : activeItem?.label || activeHelpItem?.label || "Operations"}
-            </h2>
+          <div className="flex items-start gap-3">
+            <button
+              className="topbar-icon-button lg:hidden"
+              type="button"
+              aria-label="Open navigation menu"
+              aria-expanded={isSidebarOpen}
+              onClick={() => setIsSidebarOpen(true)}
+            >
+              <MenuIcon />
+            </button>
+
+            <div>
+              <p className="eyebrow">Mission control</p>
+              <h2 className="text-2xl font-semibold text-slate-950">
+                {mustChangePassword && !activeHelpItem ? "Password reset required" : activeItem?.label || activeHelpItem?.label || "Operations"}
+              </h2>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {!mustChangePassword && isSuperAdmin ? (

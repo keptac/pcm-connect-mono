@@ -73,8 +73,8 @@ def is_student_profile(user: User) -> bool:
     return bool(user.member and (user.member.status or "Student") == "Student")
 
 
-def require_marketplace_access(db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> User:
-    if "service_recovery" in get_user_roles(db, user):
+def require_marketplace_access(user: User = Depends(get_current_user), db: Session | None = Depends(get_db)) -> User:
+    if isinstance(db, Session) and "service_recovery" in get_user_roles(db, user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
     if is_student_profile(user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Marketplace is only available to non-student profiles")

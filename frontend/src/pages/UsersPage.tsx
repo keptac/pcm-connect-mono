@@ -551,7 +551,7 @@ export default function UsersPage() {
                   <input className="field-input" type="date" value={form.tenure_starts_on} onChange={(event) => setForm({ ...form, tenure_starts_on: event.target.value })} />
                 </label>
                 <div className="md:col-span-2 rounded-[16px] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  Standard term of office is {DEFAULT_TENURE_MONTHS} months. When the tenure ends the account is disabled automatically, then removed from the team administration list after 3 months of being disabled.
+                  Standard term of office is {DEFAULT_TENURE_MONTHS} months. When the tenure ends the account is disabled automatically.
                 </div>
               </>
             )}

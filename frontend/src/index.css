@@ -70,15 +70,39 @@ textarea {
 }
 
 .app-shell {
-  @apply min-h-screen lg:grid lg:grid-cols-[310px_1fr];
+  @apply min-h-screen;
+}
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  border: 0;
+  padding: 0;
+  background: rgba(15, 23, 42, 0.42);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.24s ease;
+}
+
+.sidebar-backdrop-open {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .sidebar-shell {
-  @apply flex flex-col justify-between gap-8 border-r px-6 py-8 backdrop-blur xl:px-8;
+  @apply fixed inset-y-0 left-0 z-50 flex w-[min(310px,calc(100vw-1rem))] flex-col justify-between gap-8 border-r px-6 py-8 backdrop-blur xl:px-8;
   border-color: var(--pcm-border);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(246, 248, 253, 0.88)),
     linear-gradient(180deg, rgba(74, 155, 214, 0.04), rgba(113, 87, 186, 0.03));
+  transform: translateX(calc(-100% - 1rem));
+  transition: transform 0.26s ease, box-shadow 0.26s ease;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+}
+
+.sidebar-shell-open {
+  transform: translateX(0);
 }
 
 .sidebar-brand-title,
@@ -96,9 +120,15 @@ textarea {
 
 @media (min-width: 1024px) {
   .app-shell {
+    display: grid;
+    grid-template-columns: 310px 1fr;
     height: 100vh;
     min-height: 100vh;
     overflow: hidden;
+  }
+
+  .sidebar-backdrop {
+    display: none;
   }
 
   .sidebar-shell,
@@ -110,7 +140,14 @@ textarea {
   }
 
   .sidebar-shell {
+    position: static;
+    inset: auto;
+    z-index: auto;
+    width: auto;
+    transform: none;
+    transition: none;
     overflow-y: auto;
+    box-shadow: none;
   }
 
   .content-shell {
