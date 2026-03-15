@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { authApi, messagesApi, universitiesApi } from "../api/endpoints";
+import adventistSymbolWhite from "../images/adventist-symbol--white.png";
 import heroImage from "../images/background-image-1.jpg";
 import pcmLogo from "../images/pcm_logo.png";
 import { bootstrapChatKeys, clearSessionWrappingKey } from "../lib/chatCrypto";
@@ -83,6 +84,7 @@ export default function LoginPage() {
     <div className="login-shell">
       <div className="login-backdrop" style={{ backgroundImage: `url(${heroImage})` }} />
       <div className="login-overlay" />
+      <img className="login-corner-symbol" src={adventistSymbolWhite} alt="Adventist symbol" />
       <div className="login-grid">
         <section className="login-story">
           <div className="login-brand">

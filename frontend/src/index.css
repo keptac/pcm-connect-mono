@@ -610,6 +610,17 @@ textarea.field-input {
     linear-gradient(180deg, rgba(15, 23, 42, 0.28) 0%, rgba(15, 23, 42, 0.55) 100%);
 }
 
+.login-corner-symbol {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  z-index: 2;
+  width: 6rem;
+  max-width: 24vw;
+  object-fit: contain;
+  opacity: 0.92;
+}
+
 .login-grid {
   @apply relative mx-auto grid w-full max-w-7xl flex-1 items-center gap-8 py-2 lg:grid-cols-[1.15fr_0.8fr];
 }
