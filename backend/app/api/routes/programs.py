@@ -30,6 +30,19 @@ def _audience_supports_alumni(value: str | None) -> bool:
     return _normalize_audience(value).strip().lower() in ALUMNI_ALLOWED_AUDIENCES
 
 
+def _validate_program_window(start_date: date | None, end_date: date | None) -> None:
+    if start_date and end_date and end_date < start_date:
+        raise HTTPException(status_code=400, detail="Program end date must be on or after the start date")
+
+
+def _calculate_duration_weeks(start_date: date | None, end_date: date | None) -> float | None:
+    if start_date is None or end_date is None:
+        return None
+    _validate_program_window(start_date, end_date)
+    duration_days = (end_date - start_date).days + 1
+    return round(duration_days / 7, 1)
+
+
 def _resolve_program_scope(user, requested_university_id: int | None) -> int | None:
     if requested_university_id is None:
         if user.university_id:
@@ -106,13 +119,18 @@ def create_program(
     scoped_university_id = _resolve_program_scope(user, payload.university_id)
     audience = _normalize_audience(payload.audience)
     _enforce_program_role_rules(db, user, audience)
+    _validate_program_window(payload.start_date, payload.end_date)
     if scoped_university_id is not None:
         university = db.query(University).filter(University.id == scoped_university_id).first()
         if not university:
             raise HTTPException(status_code=404, detail="University not found")
 
+    payload_data = payload.model_dump(exclude={"university_id", "audience"})
+    if payload.start_date and payload.end_date:
+        payload_data["duration_weeks"] = _calculate_duration_weeks(payload.start_date, payload.end_date)
+
     program = Program(
-        **payload.model_dump(exclude={"university_id", "audience"}),
+        **payload_data,
         university_id=scoped_university_id,
         audience=audience,
     )
@@ -139,6 +157,9 @@ def update_program(
     updates = payload.model_dump(exclude_unset=True)
     target_audience = _normalize_audience(updates["audience"]) if "audience" in updates else _normalize_audience(program.audience)
     _enforce_program_role_rules(db, user, target_audience)
+    merged_start_date = updates["start_date"] if "start_date" in updates else program.start_date
+    merged_end_date = updates["end_date"] if "end_date" in updates else program.end_date
+    _validate_program_window(merged_start_date, merged_end_date)
     if "university_id" in updates:
         updates["university_id"] = _resolve_program_scope(user, updates.get("university_id"))
         if updates["university_id"] is not None:
@@ -147,6 +168,8 @@ def update_program(
                 raise HTTPException(status_code=404, detail="University not found")
     if "audience" in updates:
         updates["audience"] = target_audience
+    if "start_date" in updates or "end_date" in updates or ("duration_weeks" in updates and merged_start_date and merged_end_date):
+        updates["duration_weeks"] = _calculate_duration_weeks(merged_start_date, merged_end_date)
 
     for key, value in updates.items():
         setattr(program, key, value)

@@ -18,7 +18,7 @@ const PERIOD_VISIBLE_PAIR_LIMIT = 4;
 const PERIOD_MIN_CHART_WIDTH = 320;
 const financeViewOptions = [
   { value: "all", label: "All Finance" },
-  { value: "hq", label: "PCM HQ" },
+  { value: "hq", label: "PCM Office" },
   { value: "alumni", label: "Alumni" },
   { value: "students", label: "Students" }
 ];
@@ -91,8 +91,9 @@ export default function FundingPage() {
   const client = useQueryClient();
   const { roles, canSelectUniversity, scopedUniversityId, defaultUniversityId, isUniversityScoped } = useUniversityScope();
   const canView = roles.some((role) => ["super_admin", "student_admin", "alumni_admin", "finance_officer", "students_finance", "executive", "director"].includes(role));
-  const canManageRecords = roles.some((role) => ["super_admin", "finance_officer", "students_finance"].includes(role));
-  const canUseHq = roles.includes("super_admin") && !isUniversityScoped;
+  const canManageRecords = roles.some((role) => ["super_admin", "finance_officer", "students_finance", "executive"].includes(role));
+  const canUseHq = roles.some((role) => ["super_admin", "executive"].includes(role)) && !isUniversityScoped;
+  const canSelectFundingScope = canSelectUniversity || (roles.includes("executive") && !isUniversityScoped);
 
   const { data: funding } = useQuery({
     queryKey: ["funding", canUseHq ? "all" : scopedUniversityId],
@@ -505,7 +506,7 @@ export default function FundingPage() {
                         </td>
                         <td>
                           <div className="table-primary">
-                            {entry.university_id ? (universityLookup[entry.university_id] || entry.university_name) : "PCM HQ / National Office"}
+                            {entry.university_id ? (universityLookup[entry.university_id] || entry.university_name) : "PCM Office / National Office"}
                           </div>
                           <div className="table-secondary">
                             {entry.program_id
@@ -553,7 +554,7 @@ export default function FundingPage() {
                 return {
                   date: formatDate(entry.transaction_date),
                   source: entry.source_name || "",
-                  university_or_campus: entry.university_id ? (universityLookup[entry.university_id] || entry.university_name) : "PCM HQ / National Office",
+                  university_or_campus: entry.university_id ? (universityLookup[entry.university_id] || entry.university_name) : "PCM Office / National Office",
                   program: entry.program_id ? (programLookup[entry.program_id] || entry.program_name) : "General treasury",
                   audience: entry.program_id ? normalizeProgramAudience(programMetaLookup[entry.program_id]) : "",
                   direction,
@@ -613,7 +614,7 @@ export default function FundingPage() {
             }}
           >
             <div className="grid gap-4 md:grid-cols-2">
-              {canSelectUniversity ? (
+              {canSelectFundingScope ? (
                 <label className="field-shell">
                   <span className="field-label">{canUseHq ? "Treasury scope" : "University / campus"}</span>
                   <select
@@ -621,7 +622,7 @@ export default function FundingPage() {
                     value={form.university_id}
                     onChange={(event) => setForm({ ...form, university_id: event.target.value, program_id: "" })}
                   >
-                    {canUseHq ? <option value={HQ_SCOPE}>PCM HQ / National Office</option> : <option value="">Select university or campus</option>}
+                    {canUseHq ? <option value={HQ_SCOPE}>PCM Office / National Office</option> : <option value="">Select university or campus</option>}
                     {universities?.map((university: any) => (
                       <option key={university.id} value={university.id}>{university.name}</option>
                     ))}

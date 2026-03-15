@@ -137,6 +137,20 @@ export const programUpdatesApi = {
     }).then((res) => ({
       blob: res.data,
       filename: parseFilenameFromDisposition(res.headers["content-disposition"])
+    })),
+  downloadConsolidatedReport: (options?: { universityId?: number | null; programId?: number | null; reportingPeriod?: string | null }) =>
+    api.get("/program-updates/consolidated-report-pdf", {
+      params: Object.fromEntries(
+        Object.entries({
+          university_id: options?.universityId || undefined,
+          program_id: options?.programId,
+          reporting_period: options?.reportingPeriod || undefined,
+        }).filter(([, value]) => value !== undefined && value !== null && value !== "")
+      ),
+      responseType: "blob"
+    }).then((res) => ({
+      blob: res.data,
+      filename: parseFilenameFromDisposition(res.headers["content-disposition"])
     }))
 };
 

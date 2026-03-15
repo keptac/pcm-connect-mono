@@ -12,12 +12,25 @@ from ...models import AcademicProgram, Member
 from ...schemas import AlumniConnectRead, MemberCreate, MemberRead, MemberSelfProfileUpdate, MemberUpdate
 from ...services.audit_log import log_action
 from ...services.rbac import get_user_roles
-from ..deps import CHAPTER_ROLES, GENERAL_NETWORK_ROLES, require_non_service_recovery, require_role, resolve_university_scope
+from ..deps import CHAPTER_ROLES, require_non_service_recovery, require_role, resolve_university_scope
 
 router = APIRouter(prefix="/members", tags=["members"])
 
 ALLOWED_MEMBER_STATUSES = {"Student", "Staff", "Alumni", "Volunteer", "Partner"}
 FULL_MEMBER_ACCESS_ROLES = {"super_admin", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director"}
+ALUMNI_CONNECT_BLOCKED_ROLES = {
+    "super_admin",
+    "student_admin",
+    "program_manager",
+    "finance_officer",
+    "students_finance",
+    "committee_member",
+    "executive",
+    "director",
+    "alumni_admin",
+    "service_recovery",
+}
+ALUMNI_CONNECT_ALLOWED_STATUSES = {"Student", "Alumni"}
 
 
 def _member_access_scope(db: Session, user) -> tuple[set[str] | None, set[str] | None]:
@@ -114,6 +127,16 @@ def _serialize_alumni_connect(member: Member) -> AlumniConnectRead:
     )
 
 
+def _ensure_alumni_connect_access(db: Session, user) -> None:
+    user_roles = set(get_user_roles(db, user))
+    if user_roles.intersection(ALUMNI_CONNECT_BLOCKED_ROLES):
+        raise HTTPException(status_code=403, detail="Alumni Connect is only available to student and alumni accounts")
+
+    member_status = user.member.status if user.member else None
+    if member_status not in ALUMNI_CONNECT_ALLOWED_STATUSES:
+        raise HTTPException(status_code=403, detail="Alumni Connect is only available to student and alumni accounts")
+
+
 def _resolve_program_of_study(
     db: Session,
     university_id: int,
@@ -204,8 +227,9 @@ def list_members(
 def list_alumni_connect(
     university_id: int | None = None,
     db: Session = Depends(get_db),
-    user=Depends(require_role(GENERAL_NETWORK_ROLES)),
+    user=Depends(require_non_service_recovery),
 ):
+    _ensure_alumni_connect_access(db, user)
     scoped_university_id = resolve_university_scope(user, university_id)
     query = (
         db.query(Member)

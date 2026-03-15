@@ -65,6 +65,7 @@ export default function UpdatesPage() {
   const [form, setForm] = useState(() => buildInitialForm(defaultUniversityId));
   const [periodFilter, setPeriodFilter] = useState("all");
   const [isDownloadingPack, setIsDownloadingPack] = useState(false);
+  const [isDownloadingConsolidated, setIsDownloadingConsolidated] = useState(false);
   const [downloadingUpdateId, setDownloadingUpdateId] = useState<number | null>(null);
 
   const defaultReportingPeriod = useMemo(() => {
@@ -141,6 +142,27 @@ export default function UpdatesPage() {
     }
   }
 
+  async function downloadConsolidatedReport() {
+    if (filteredUpdates.length === 0 || isDownloadingConsolidated) return;
+    setIsDownloadingConsolidated(true);
+    try {
+      const response = await programUpdatesApi.downloadConsolidatedReport({
+        universityId: scopedUniversityId,
+        reportingPeriod: periodFilter === "all" ? undefined : periodFilter
+      });
+      const downloadUrl = window.URL.createObjectURL(response.blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = response.filename || `impact-report-consolidated_${periodFilter === "all" ? "all-periods" : periodFilter}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } finally {
+      setIsDownloadingConsolidated(false);
+    }
+  }
+
   async function downloadSingleReport(update: any) {
     if (downloadingUpdateId === update.id) return;
     setDownloadingUpdateId(update.id);
@@ -199,10 +221,18 @@ export default function UpdatesPage() {
     <div className="space-y-8">
       <PageHeader
         eyebrow="Impact reporting"
-        title="Event updates"
-        description="Every university or campus can submit structured event updates with outcomes, challenges, reach, and funding usage."
+        title="Program reports"
+        description="Every university or campus can submit structured program reports with outcomes, challenges, reach, and funding usage."
         actions={(
           <>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={filteredUpdates.length === 0 || isDownloadingConsolidated}
+              onClick={downloadConsolidatedReport}
+            >
+              {isDownloadingConsolidated ? "Preparing consolidated report..." : "Download consolidated report"}
+            </button>
             <button
               className="secondary-button"
               type="button"

@@ -9,12 +9,14 @@ from sqlalchemy.orm import Session
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.api.deps import FUNDING_WRITE_ROLES, require_role
 from app.api.routes.auth import change_password, login
+from app.api.routes.funding import create_funding_record
 from app.api.routes.users import create_user, list_users, recover_user_password, update_user
 from app.core.security import hash_password, verify_password
 from app.db.base import Base
-from app.models import Role, User, UserRole
-from app.schemas import ChangePasswordRequest, LoginRequest, UserCreate, UserPasswordRecovery, UserUpdate
+from app.models import FundingRecord, Role, University, User, UserRole
+from app.schemas import ChangePasswordRequest, FundingRecordCreate, LoginRequest, UserCreate, UserPasswordRecovery, UserUpdate
 from app.services.user_lifecycle import run_user_lifecycle_maintenance
 
 
@@ -218,6 +220,46 @@ def test_service_recovery_can_reset_password_and_force_change(db_session: Sessio
     assert session.password_reset_required is True
 
 
+def test_team_user_list_hides_seeded_service_accounts(db_session: Session):
+    provisioner = User(
+        email="super-admin@example.com",
+        name="Super Admin",
+        password_hash="hashed",
+    )
+    system_admin = User(
+        email="admin@pcm.local",
+        name="System Admin",
+        password_hash="hashed",
+        is_system_admin=True,
+    )
+    recovery_user = User(
+        email="adam@pcm.service",
+        name="PCM Recovery Service",
+        password_hash="hashed",
+    )
+    visible_user = User(
+        email="team@example.com",
+        name="Team User",
+        password_hash="hashed",
+        subject_to_tenure=True,
+        tenure_starts_on=date(2026, 1, 1),
+        tenure_ends_on=date(2028, 1, 1),
+    )
+    db_session.add_all([provisioner, system_admin, recovery_user, visible_user])
+    db_session.commit()
+    add_role(db_session, provisioner, "super_admin")
+    add_role(db_session, system_admin, "super_admin")
+    add_role(db_session, recovery_user, "service_recovery")
+    add_role(db_session, visible_user, "student_admin")
+
+    listed_users = list_users(db=db_session, user=provisioner)
+    listed_names = {item.name for item in listed_users}
+
+    assert "System Admin" not in listed_names
+    assert "PCM Recovery Service" not in listed_names
+    assert "Team User" in listed_names
+
+
 def test_expired_tenure_disables_then_hides_user_from_team_list(db_session: Session):
     provisioner = User(
         email="super-admin@example.com",
@@ -336,3 +378,42 @@ def test_change_password_clears_force_reset_flag(db_session: Session):
     assert updated.force_password_reset is False
     assert user.force_password_reset is False
     assert verify_password("new-secret123", user.password_hash)
+
+
+def test_executive_can_record_treasury_entry(db_session: Session):
+    executive_user = User(
+        email="executive@example.com",
+        name="Executive User",
+        password_hash="hashed",
+    )
+    university = University(name="Test University")
+    db_session.add_all([executive_user, university])
+    db_session.commit()
+    add_role(db_session, executive_user, "executive")
+
+    guard = require_role(FUNDING_WRITE_ROLES)
+    assert guard(db=db_session, user=executive_user) is executive_user
+
+    created = create_funding_record(
+        FundingRecordCreate(
+            university_id=university.id,
+            source_name="Treasury receipt",
+            entry_type="donation",
+            flow_direction="inflow",
+            receipt_category="Donation",
+            reporting_window="weekly",
+            amount=245.0,
+            currency="USD",
+            transaction_date=date(2026, 3, 15),
+            channel="cash",
+            designation="Executive allocation",
+        ),
+        db=db_session,
+        user=executive_user,
+    )
+
+    stored = db_session.query(FundingRecord).filter(FundingRecord.id == created.id).first()
+    assert stored is not None
+    assert created.university_id == university.id
+    assert created.recorded_by == executive_user.id
+    assert created.receipt_category == "Donation"

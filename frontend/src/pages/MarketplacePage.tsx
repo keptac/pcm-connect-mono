@@ -242,8 +242,8 @@ export default function MarketplacePage() {
               <span className="field-label">Type</span>
               <select className="field-input" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
                 <option value="all">All</option>
-                <option value="offer">On offer</option>
-                <option value="need">Needed</option>
+                <option value="offer">Services im offerring</option>
+                <option value="need">Service Needed</option>
               </select>
             </label>
             <label className="flex items-center gap-3 rounded-[14px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
@@ -572,8 +572,8 @@ export default function MarketplacePage() {
             <label className="field-shell">
               <span className="field-label">Listing type</span>
               <select className="field-input" value={form.listing_type} onChange={(event) => setForm((current) => ({ ...current, listing_type: event.target.value }))}>
-                <option value="offer">On offer</option>
-                <option value="need">Needed</option>
+                <option value="offer">Service/Product i'm offering</option>
+                <option value="need">Service/Product Needed</option>
               </select>
             </label>
 

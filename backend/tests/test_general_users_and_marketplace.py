@@ -276,17 +276,58 @@ def test_alumni_connect_exposes_services_products_and_employer_fields(db_session
         email="viewer@example.com",
         name="Viewer User",
         password_hash="hashed",
+        member=Member(
+            id=uuid4(),
+            university=university,
+            first_name="Tadiwa",
+            last_name="Ncube",
+            member_id="PCM-105",
+            start_year=2022,
+            status="Alumni",
+            active=True,
+        ),
     )
     db_session.add_all([university, member, viewer])
     db_session.commit()
 
     alumni_rows = list_alumni_connect(db=db_session, user=viewer)
+    nyasha_row = next((row for row in alumni_rows if row.member_id == "PCM-104"), None)
 
-    assert len(alumni_rows) == 1
-    assert alumni_rows[0].program_of_study_name is None
-    assert alumni_rows[0].employer_name == "TechWorks"
-    assert alumni_rows[0].services_offered == "Software engineering and mentoring"
-    assert alumni_rows[0].products_supplied == "Custom web applications"
+    assert len(alumni_rows) == 2
+    assert nyasha_row is not None
+    assert nyasha_row.program_of_study_name is None
+    assert nyasha_row.employer_name == "TechWorks"
+    assert nyasha_row.services_offered == "Software engineering and mentoring"
+    assert nyasha_row.products_supplied == "Custom web applications"
+
+
+def test_alumni_connect_denies_admin_and_global_scope_roles(db_session: Session):
+    university = University(name="Example University")
+    admin_member = Member(
+        id=uuid4(),
+        university=university,
+        first_name="Rudo",
+        last_name="Mhlanga",
+        member_id="PCM-106",
+        start_year=2020,
+        status="Alumni",
+        active=True,
+    )
+    admin_user = User(
+        email="admin@example.com",
+        name="Admin User",
+        password_hash="hashed",
+        member=admin_member,
+    )
+    db_session.add_all([university, admin_member, admin_user])
+    db_session.commit()
+    add_role(db_session, admin_user, "executive")
+
+    with pytest.raises(HTTPException) as exc_info:
+        list_alumni_connect(db=db_session, user=admin_user)
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Alumni Connect is only available to student and alumni accounts"
 
 
 def test_global_role_can_post_marketplace_listing_for_a_university(db_session: Session):

@@ -20,6 +20,7 @@ from ...schemas import (
     ProgramImpactUpdateRead,
 )
 from ...services.audit_log import log_action
+from ...services.program_update_consolidated_exports import build_consolidated_program_update_pdf
 from ...services.program_update_exports import build_program_update_pdf, build_program_update_report_pack
 from ..deps import GENERAL_USER_ROLES, PROGRAM_ROLES, require_role, resolve_university_scope
 
@@ -464,6 +465,35 @@ def download_report_pack(
         "Content-Disposition": f'attachment; filename="impact-report-pack_{scope_label}_{period_label}.zip"'
     }
     return StreamingResponse(BytesIO(zip_bytes), media_type="application/zip", headers=headers)
+
+
+@router.get("/consolidated-report-pdf")
+def download_consolidated_report_pdf(
+    university_id: int | None = None,
+    program_id: int | None = None,
+    reporting_period: str | None = None,
+    db: Session = Depends(get_db),
+    user=Depends(require_role(PROGRAM_ROLES)),
+):
+    scoped_university_id = resolve_university_scope(user, university_id)
+    updates = _build_updates_query(
+        db,
+        scoped_university_id,
+        program_id=program_id,
+        reporting_period=reporting_period,
+    ).all()
+    if not updates:
+        raise HTTPException(status_code=404, detail="No updates found for the selected filters")
+
+    pdf_bytes = build_consolidated_program_update_pdf(updates)
+    scope_label = "all-campuses"
+    if scoped_university_id and updates[0].university:
+        scope_label = updates[0].university.short_code or updates[0].university.name.lower().replace(" ", "-")
+    period_label = reporting_period or "all-periods"
+    headers = {
+        "Content-Disposition": f'attachment; filename="impact-report-consolidated_{scope_label}_{period_label}.pdf"'
+    }
+    return StreamingResponse(BytesIO(pdf_bytes), media_type="application/pdf", headers=headers)
 
 
 @router.get("/{update_id}/report-pdf")

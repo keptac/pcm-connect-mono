@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { authApi, messagesApi, usersMeApi, universitiesApi } from "../api/endpoints";
 import pcmLogo from "../images/pcm_logo.png";
+import { canAccessAlumniConnect } from "../lib/alumniConnectAccess";
+import { APP_VERSION } from "../lib/appVersion";
 import { bootstrapChatKeys, clearSessionWrappingKey, rotateChatWrappingPassword } from "../lib/chatCrypto";
 import { useUniversityScope } from "../lib/universityScope";
 import { useAuthStore } from "../store/auth";
@@ -16,6 +18,24 @@ const helpMenuItems = [
   { label: "Terms & Conditions", to: "/help/terms" },
   { label: "Privacy", to: "/help/privacy" }
 ];
+
+const navDisplayOrder = new Map([
+  ["Overview", 0],
+  ["Mission Reports", 1],
+  ["Ministry programs", 2],
+  ["Funding", 3],
+  ["Calendar", 4],
+  ["Marketplace", 5],
+  ["My profile", 6],
+  ["People", 7],
+  ["Alumni connect", 8],
+  ["Messages", 9],
+  ["Broadcasts", 10],
+  ["Mission reports", 11],
+  ["Universities", 12],
+  ["Team", 13],
+  ["Admin", 14]
+]);
 
 const navItems = [
   {
@@ -79,7 +99,7 @@ const navItems = [
     roles: missionRoles
   },
   {
-    label: "Updates",
+    label: "Mission Reports",
     to: "/updates",
     description: "Impact reporting",
     roles: ["super_admin", "student_admin", "program_manager", "committee_member", "executive", "director", "alumni_admin"]
@@ -109,6 +129,8 @@ const navItems = [
     roles: ["super_admin"]
   }
 ];
+
+const navItemBaseOrder = new Map(navItems.map((item, index) => [item.label, index]));
 
 function formatRoleLabel(role: string) {
   return role.replace(/_/g, " ");
@@ -245,7 +267,20 @@ export default function DashboardLayout() {
 
   if (!token || !user) return null;
 
-  const visibleNav = mustChangePassword ? [] : navItems.filter((item) => item.roles.some((role) => roles.includes(role)));
+  const visibleNav = mustChangePassword
+    ? []
+    : navItems
+        .filter((item) => {
+          if (item.to === "/alumni-connect") {
+            return canAccessAlumniConnect(user, roles);
+          }
+          return item.roles.some((role) => roles.includes(role));
+        })
+        .sort((left, right) => {
+          const leftOrder = navDisplayOrder.get(left.label) ?? navItemBaseOrder.get(left.label) ?? Number.MAX_SAFE_INTEGER;
+          const rightOrder = navDisplayOrder.get(right.label) ?? navItemBaseOrder.get(right.label) ?? Number.MAX_SAFE_INTEGER;
+          return leftOrder - rightOrder;
+        });
   const activeItem = visibleNav.find((item) => item.to === location.pathname) || visibleNav.find((item) => location.pathname.startsWith(item.to) && item.to !== "/");
   const activeHelpItem = helpMenuItems.find((item) => item.to === location.pathname);
   const scopedUniversity = universitiesQuery.data?.find((university: any) => university.id === scopedUniversityId);
@@ -297,6 +332,7 @@ export default function DashboardLayout() {
               <div>
                 <h2 className="sidebar-brand-title text-xl font-semibold text-slate-900">PCM Connect</h2>
                 <p className="sidebar-brand-subtitle mt-1 text-xs uppercase tracking-[0.22em] text-slate-500">Campus mission management</p>
+                <p className="sidebar-version mt-2">Version {APP_VERSION}</p>
               </div>
             </div>
 
@@ -509,7 +545,7 @@ export default function DashboardLayout() {
         </div>
 
         <footer className="app-footer">
-          Managed by North Zimbabwe Conference PCM Communication Department
+          Developed by North Zimbabwe Conference PCM Communication Department
         </footer>
       </main>
     </div>

@@ -110,6 +110,11 @@ textarea {
   font-family: "Avenir Next", "Segoe UI Variable", "Helvetica Neue", sans-serif;
 }
 
+.sidebar-version {
+  @apply text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500;
+  font-family: "Avenir Next", "Segoe UI Variable", "Helvetica Neue", sans-serif;
+}
+
 .sidebar-brand-title {
   letter-spacing: -0.02em;
 }
@@ -647,6 +652,10 @@ textarea.field-input {
     linear-gradient(180deg, rgba(15, 23, 42, 0.28) 0%, rgba(15, 23, 42, 0.55) 100%);
 }
 
+.login-info-button {
+  @apply absolute left-5 top-5 z-[2] inline-flex h-11 w-11 items-center justify-center rounded-[12px] border border-white/20 bg-white/10 text-white shadow-[0_14px_34px_rgba(15,23,42,0.16)] backdrop-blur transition hover:bg-white/20 hover:text-white;
+}
+
 .login-corner-symbol {
   position: absolute;
   top: 1.25rem;
@@ -664,6 +673,17 @@ textarea.field-input {
 
 .login-footer {
   @apply relative mx-auto mt-3 max-w-7xl pb-1 text-center text-sm text-white/80;
+}
+
+.login-version {
+  @apply text-xs font-medium uppercase tracking-[0.24em] text-white/70;
+}
+
+.about-page h1,
+.about-page h2,
+.about-page h3,
+.about-page h4 {
+  font-family: "Avenir Next", "Segoe UI Variable", "Helvetica Neue", sans-serif;
 }
 
 .login-story {

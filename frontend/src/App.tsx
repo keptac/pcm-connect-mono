@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 import DashboardLayout from "./layouts/DashboardLayout";
 import AdminPage from "./pages/AdminPage";
+import AboutPage from "./pages/AboutPage";
 import AlumniConnectPage from "./pages/AlumniConnectPage";
 import AuditLogsPage from "./pages/AuditLogsPage";
 import BroadcastsPage from "./pages/BroadcastsPage";
@@ -36,6 +37,7 @@ function HomeRoute() {
 export default function App() {
   return (
     <Routes>
+      <Route path="/about" element={<AboutPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/" element={<DashboardLayout />}>
         <Route index element={<HomeRoute />} />

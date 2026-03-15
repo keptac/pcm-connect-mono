@@ -149,7 +149,7 @@ def funding_breakdown(db: Session, university_id: int | None = None):
         direction = _funding_direction(item)
         category = _funding_category(item)
         by_type[f"{direction.title()} / {category}"] += item.amount
-        label = item.university.name if item.university else "PCM HQ / National Office"
+        label = item.university.name if item.university else "PCM Office / National Office"
         by_university[label] += -item.amount if direction == "outflow" else item.amount
 
     return {

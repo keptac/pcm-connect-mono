@@ -33,6 +33,22 @@ function parseIsoDate(value?: string | null) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function calculateProgramDurationWeeks(startDateValue?: string | null, endDateValue?: string | null) {
+  const startDate = parseIsoDate(startDateValue);
+  const endDate = parseIsoDate(endDateValue);
+  if (!startDate || !endDate || endDate < startDate) return null;
+  const millisecondsPerDay = 1000 * 60 * 60 * 24;
+  const durationDays = Math.floor((endDate.getTime() - startDate.getTime()) / millisecondsPerDay) + 1;
+  return Number((durationDays / 7).toFixed(1));
+}
+
+function formatProgramDurationWeeks(value?: number | string | null) {
+  if (value === null || value === undefined || value === "") return "";
+  const numericValue = typeof value === "string" ? Number(value) : value;
+  if (!Number.isFinite(numericValue)) return "";
+  return Number.isInteger(numericValue) ? String(numericValue) : numericValue.toFixed(1).replace(/\.0$/, "");
+}
+
 function programFallsInPeriod(program: any, period: any, fallbackCode?: string) {
   if (!period) {
     return toReportingPeriod(program.start_date || program.end_date) === fallbackCode;
@@ -254,6 +270,7 @@ export default function ProgramsPage() {
   }
 
   function hydrateForm(program: any) {
+    const calculatedDuration = calculateProgramDurationWeeks(program.start_date, program.end_date);
     setSelectedId(program.id);
     setForm({
       university_id: program.university_id ? String(program.university_id) : NETWORK_SCOPE,
@@ -265,7 +282,7 @@ export default function ProgramsPage() {
       manager_name: program.manager_name || "",
       target_beneficiaries: program.target_beneficiaries ? String(program.target_beneficiaries) : "",
       annual_budget: program.annual_budget ? String(program.annual_budget) : "",
-      duration_weeks: program.duration_weeks ? String(program.duration_weeks) : "",
+      duration_weeks: calculatedDuration !== null ? formatProgramDurationWeeks(calculatedDuration) : formatProgramDurationWeeks(program.duration_weeks),
       level: program.level === "Chapter" ? "Campus" : (program.level || "Campus"),
       start_date: program.start_date || "",
       end_date: program.end_date || ""
@@ -279,6 +296,17 @@ export default function ProgramsPage() {
       return ["Alumni", "Students and Alumni"].includes(program.audience || "Students");
     }
     return true;
+  }
+
+  function handleProgramDateChange(field: "start_date" | "end_date", value: string) {
+    setForm((current) => {
+      const nextForm = { ...current, [field]: value };
+      const calculatedDuration = calculateProgramDurationWeeks(nextForm.start_date, nextForm.end_date);
+      return {
+        ...nextForm,
+        duration_weeks: calculatedDuration === null ? "" : formatProgramDurationWeeks(calculatedDuration)
+      };
+    });
   }
 
   const activePrograms = programs?.filter((program: any) => program.status === "active").length || 0;
@@ -586,12 +614,13 @@ export default function ProgramsPage() {
             className="grid gap-4"
             onSubmit={async (event) => {
               event.preventDefault();
+              const calculatedDurationWeeks = calculateProgramDurationWeeks(form.start_date, form.end_date);
               const payload = {
                 ...form,
                 university_id: form.university_id === NETWORK_SCOPE ? null : Number(form.university_id),
                 target_beneficiaries: form.target_beneficiaries ? Number(form.target_beneficiaries) : null,
                 annual_budget: form.annual_budget ? Number(form.annual_budget) : null,
-                duration_weeks: form.duration_weeks ? Number(form.duration_weeks) : null,
+                duration_weeks: calculatedDurationWeeks ?? (form.duration_weeks ? Number(form.duration_weeks) : null),
                 start_date: form.start_date || null,
                 end_date: form.end_date || null
               };
@@ -685,17 +714,16 @@ export default function ProgramsPage() {
                 <input className="field-input" value={form.target_beneficiaries} onChange={(event) => setForm({ ...form, target_beneficiaries: event.target.value })} />
               </label>
               <label className="field-shell">
-                <span className="field-label">Annual budget</span>
+                <span className="field-label">Program budget</span>
                 <input className="field-input" value={form.annual_budget} onChange={(event) => setForm({ ...form, annual_budget: event.target.value })} />
               </label>
               <label className="field-shell">
                 <span className="field-label">Duration (weeks)</span>
                 <input
                   className="field-input"
-                  inputMode="decimal"
-                  placeholder="0.5 for 2-3 days, 4 for one month"
+                  placeholder="Calculated from the start and end dates"
                   value={form.duration_weeks}
-                  onChange={(event) => setForm({ ...form, duration_weeks: event.target.value })}
+                  readOnly
                 />
               </label>
             </div>
@@ -712,11 +740,23 @@ export default function ProgramsPage() {
               </label>
               <label className="field-shell">
                 <span className="field-label">Start date</span>
-                <input className="field-input" type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} />
+                <input
+                  className="field-input"
+                  type="date"
+                  max={form.end_date || undefined}
+                  value={form.start_date}
+                  onChange={(event) => handleProgramDateChange("start_date", event.target.value)}
+                />
               </label>
               <label className="field-shell">
                 <span className="field-label">End date</span>
-                <input className="field-input" type="date" value={form.end_date} onChange={(event) => setForm({ ...form, end_date: event.target.value })} />
+                <input
+                  className="field-input"
+                  type="date"
+                  min={form.start_date || undefined}
+                  value={form.end_date}
+                  onChange={(event) => handleProgramDateChange("end_date", event.target.value)}
+                />
               </label>
             </div>
 

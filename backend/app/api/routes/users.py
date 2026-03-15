@@ -73,6 +73,10 @@ def _ensure_actor_has_any_role(db: Session, actor: User, required_roles: list[st
         raise HTTPException(status_code=403, detail="Insufficient role")
 
 
+def _is_hidden_team_service_account(user: User, roles: list[str]) -> bool:
+    return bool(user.is_system_admin or "service_recovery" in roles)
+
+
 def _allowed_provisioned_roles(db: Session, user: User) -> list[str]:
     user_roles = set(get_user_roles(db, user))
     if "super_admin" in user_roles:
@@ -177,6 +181,8 @@ def list_users(db: Session = Depends(get_db), user=Depends(require_role(TEAM_ACC
     results = []
     for item in users:
         roles = get_user_roles(db, item)
+        if _is_hidden_team_service_account(item, roles):
+            continue
         results.append(_serialize_user(db, item, roles=roles))
     return results
 

@@ -68,7 +68,7 @@ def _serialize(record: FundingRecord) -> FundingRecordRead:
     return FundingRecordRead(
         id=record.id,
         university_id=record.university_id,
-        university_name=record.university.name if record.university else "PCM HQ / National Office",
+        university_name=record.university.name if record.university else "PCM Office / National Office",
         program_id=record.program_id,
         program_name=record.program.name if record.program else None,
         source_name=record.source_name,

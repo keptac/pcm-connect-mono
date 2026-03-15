@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { authApi, messagesApi, universitiesApi } from "../api/endpoints";
 import adventistSymbolWhite from "../images/adventist-symbol--white.png";
 import heroImage from "../images/background-image-1.jpg";
 import pcmLogo from "../images/pcm_logo.png";
+import { APP_VERSION } from "../lib/appVersion";
 import { bootstrapChatKeys, clearSessionWrappingKey } from "../lib/chatCrypto";
 
 type GeneralLookupMatch = {
@@ -19,6 +20,16 @@ type GeneralLookupMatch = {
   program_of_study_name?: string | null;
   email_hint?: string | null;
 };
+
+function InfoIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="h-5 w-5">
+      <circle cx="10" cy="10" r="7.25" />
+      <path d="M10 8.2V13.2" />
+      <path d="M10 6.05H10.01" />
+    </svg>
+  );
+}
 
 async function persistSession(
   accessToken: string,
@@ -81,10 +92,17 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="login-shell">
-      <div className="login-backdrop" style={{ backgroundImage: `url(${heroImage})` }} />
-      <div className="login-overlay" />
-      <img className="login-corner-symbol" src={adventistSymbolWhite} alt="Adventist symbol" />
+      <div className="login-shell">
+        <div className="login-backdrop" style={{ backgroundImage: `url(${heroImage})` }} />
+        <div className="login-overlay" />
+        <Link
+          to="/about"
+          className="login-info-button"
+          aria-label="About PCM Connect"
+        >
+          <InfoIcon />
+        </Link>
+        <img className="login-corner-symbol" src={adventistSymbolWhite} alt="Adventist symbol" />
       <div className="login-grid">
         <section className="login-story">
           <div className="login-brand">
@@ -403,7 +421,10 @@ export default function LoginPage() {
       </div>
 
       <footer className="login-footer">
-        Managed by North Zimbabwe Conference PCM Communication Department
+        <div className="space-y-1">
+          <div>Developed by North Zimbabwe Conference PCM Communication Department</div>
+          <div className="login-version">Version {APP_VERSION}</div>
+        </div>
       </footer>
     </div>
   );

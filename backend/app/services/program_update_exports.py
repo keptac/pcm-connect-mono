@@ -39,6 +39,7 @@ CONTENT_WIDTH = A4[0] - (32 * mm)
 REPO_ROOT = Path(__file__).resolve().parents[3]
 LOGO_PATHS = (
     Path(__file__).resolve().parents[1] / "assets" / "pcm_logo.png",
+    Path(__file__).resolve().parents[1] / "assets" / "pcm_logo.jpg",
     REPO_ROOT / "frontend" / "src" / "images" / "pcm_logo.png",
 )
 FONT_CANDIDATES = {
@@ -530,7 +531,7 @@ def _build_attendance_chart(update: ProgramUpdate, styles):
 def _build_context_table(update: ProgramUpdate, styles):
     expected = max(int(update.program.target_beneficiaries or 0), 0) if update.program else 0
     rows = [
-        ("University / campus", update.university.name if update.university else "PCM HQ / Network"),
+        ("University / campus", update.university.name if update.university else "PCM Office / Network"),
         ("Linked ministry program", update.program.name if update.program else "Not linked"),
         ("Program audience", update.program.audience if update.program and update.program.audience else "General"),
         ("Schedule", _program_schedule(update)),

@@ -5,20 +5,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { membersApi, messagesApi, universitiesApi } from "../api/endpoints";
 import { EmptyState, PageHeader, Panel, StatusBadge, TablePagination, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
+import { canAccessAlumniConnect } from "../lib/alumniConnectAccess";
 import { useUniversityScope } from "../lib/universityScope";
-
-const alumniConnectRoles = [
-  "super_admin",
-  "student_admin",
-  "program_manager",
-  "finance_officer",
-  "students_finance",
-  "committee_member",
-  "executive",
-  "director",
-  "alumni_admin",
-  "general_user"
-];
 
 function graduationYear(value?: string | null, fallbackYear?: number | null) {
   if (value) {
@@ -40,8 +28,8 @@ function employmentTone(status?: string | null): "success" | "warning" | "info" 
 export default function AlumniConnectPage() {
   const navigate = useNavigate();
   const client = useQueryClient();
-  const { roles, scopedUniversityId } = useUniversityScope();
-  const canView = roles.some((role) => alumniConnectRoles.includes(role));
+  const { user, roles, scopedUniversityId } = useUniversityScope();
+  const canView = canAccessAlumniConnect(user, roles);
 
   const [search, setSearch] = useState("");
   const [employmentFilter, setEmploymentFilter] = useState("all");
