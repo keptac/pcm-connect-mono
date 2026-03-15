@@ -24,9 +24,9 @@ from .config import settings
 from .security import hash_password
 from .zimbabwe_academic_catalog import ZIMBABWE_ACADEMIC_INSTITUTION_SPECS, build_academic_program_specs, normalize_academic_program_name
 
-DEFAULT_ROLES = ["super_admin", "student_admin", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin", "general_user"]
+DEFAULT_ROLES = ["super_admin", "student_admin", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin", "general_user", "service_recovery"]
 ACADEMIC_SPEC_BY_NAME = {spec["name"]: spec for spec in ZIMBABWE_ACADEMIC_INSTITUTION_SPECS}
-DEFAULT_UNION_NAME = "Zimbabwe Union Conference"
+DEFAULT_UNION_NAME = "Zimbabwe East Union Conference"
 DEFAULT_CONFERENCE_SPECS = [
     {"name": "North Zimbabwe Conference", "union_name": DEFAULT_UNION_NAME},
     {"name": "East Zimbabwe Conference", "union_name": DEFAULT_UNION_NAME},
@@ -512,6 +512,15 @@ def _ensure_user_role(db: Session, user: User, role_name: str) -> None:
     if not existing:
         db.add(UserRole(user_id=user.id, role_id=role.id))
         db.commit()
+
+
+def _set_exact_user_roles(db: Session, user: User, role_names: list[str]) -> None:
+    db.query(UserRole).filter(UserRole.user_id == user.id).delete()
+    db.flush()
+    for role_name in role_names:
+        role = _ensure_role(db, role_name)
+        db.add(UserRole(user_id=user.id, role_id=role.id))
+    db.commit()
 
 
 def _ensure_chapter_manager(db: Session, university: University) -> User:
@@ -1471,11 +1480,53 @@ def seed_data(db: Session):
             name="System Admin",
             password_hash=hash_password(settings.admin_password),
             is_active=True,
+            is_system_admin=True,
+            subject_to_tenure=False,
+            force_password_reset=False,
         )
         db.add(admin)
         db.commit()
         db.refresh(admin)
+    if not admin.is_system_admin or admin.subject_to_tenure:
+        admin.is_system_admin = True
+        admin.subject_to_tenure = False
+        admin.tenure_starts_on = None
+        admin.tenure_ends_on = None
+        admin.disabled_at = None
+        admin.deleted_at = None
+        admin.is_active = True
+        admin.force_password_reset = False
+        db.commit()
+        db.refresh(admin)
     _ensure_user_role(db, admin, "super_admin")
+
+    recovery_account = db.query(User).filter(User.email == settings.service_recovery_email).first()
+    if not recovery_account:
+        recovery_account = User(
+            email=settings.service_recovery_email,
+            name="PCM Recovery Service",
+            password_hash=hash_password(settings.service_recovery_password),
+            is_active=True,
+            subject_to_tenure=False,
+            force_password_reset=False,
+        )
+        db.add(recovery_account)
+        db.commit()
+        db.refresh(recovery_account)
+    recovery_account.name = "PCM Recovery Service"
+    recovery_account.university_id = None
+    recovery_account.member_id = None
+    recovery_account.is_system_admin = False
+    recovery_account.is_active = True
+    recovery_account.subject_to_tenure = False
+    recovery_account.tenure_starts_on = None
+    recovery_account.tenure_ends_on = None
+    recovery_account.disabled_at = None
+    recovery_account.deleted_at = None
+    recovery_account.force_password_reset = False
+    db.commit()
+    db.refresh(recovery_account)
+    _set_exact_user_roles(db, recovery_account, ["service_recovery"])
 
     # Startup seeding should provide institution/reference data without
     # creating demo campus users or operational ministry records beyond

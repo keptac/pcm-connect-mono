@@ -83,16 +83,20 @@ async function deriveWrappingKey(password: string, saltBase64: string) {
   );
 }
 
+async function decryptPrivateKeyBytes(bundle: Required<ChatKeyBundle>, wrappingKey: CryptoKey) {
+  return crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: base64ToBytes(bundle.key_iv) },
+    wrappingKey,
+    base64ToBytes(bundle.private_key_encrypted)
+  );
+}
+
 async function importPublicKey(value: string) {
   return crypto.subtle.importKey("spki", base64ToBytes(value), RSA_IMPORT_ALGORITHM, false, ["encrypt"]);
 }
 
 async function decryptPrivateKey(bundle: Required<ChatKeyBundle>, wrappingKey: CryptoKey) {
-  const privateKeyBytes = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: base64ToBytes(bundle.key_iv) },
-    wrappingKey,
-    base64ToBytes(bundle.private_key_encrypted)
-  );
+  const privateKeyBytes = await decryptPrivateKeyBytes(bundle, wrappingKey);
   return crypto.subtle.importKey("pkcs8", privateKeyBytes, RSA_IMPORT_ALGORITHM, false, ["decrypt"]);
 }
 
@@ -157,6 +161,41 @@ export async function unlockChatPrivateKey(bundle: ChatKeyBundle, password: stri
   const privateKey = await decryptPrivateKey(bundle, wrappingKey);
   await exportSessionWrappingKey(wrappingKey);
   return privateKey;
+}
+
+export async function rotateChatWrappingPassword(
+  currentPassword: string,
+  nextPassword: string,
+  getKeyBundle: () => Promise<ChatKeyBundle>,
+  setKeyBundle: (payload: Required<ChatKeyBundle>) => Promise<ChatKeyBundle>
+) {
+  const existingBundle = await getKeyBundle();
+  if (!hasPersistedBundle(existingBundle)) {
+    return bootstrapChatKeys(nextPassword, getKeyBundle, setKeyBundle);
+  }
+
+  const currentWrappingKey = await deriveWrappingKey(currentPassword, existingBundle.key_salt);
+  const privateKeyBytes = await decryptPrivateKeyBytes(existingBundle, currentWrappingKey);
+  const nextSalt = randomBase64(16);
+  const nextIv = randomBase64(12);
+  const nextWrappingKey = await deriveWrappingKey(nextPassword, nextSalt);
+  const encryptedPrivateKey = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: base64ToBytes(nextIv) },
+    nextWrappingKey,
+    privateKeyBytes
+  );
+
+  const rotatedBundle: Required<ChatKeyBundle> = {
+    public_key: existingBundle.public_key,
+    private_key_encrypted: bytesToBase64(new Uint8Array(encryptedPrivateKey)),
+    key_salt: nextSalt,
+    key_iv: nextIv,
+    key_algorithm: existingBundle.key_algorithm || "PBKDF2-AES-GCM"
+  };
+
+  await setKeyBundle(rotatedBundle);
+  await exportSessionWrappingKey(nextWrappingKey);
+  return rotatedBundle;
 }
 
 export async function restoreChatPrivateKey(bundle: ChatKeyBundle) {

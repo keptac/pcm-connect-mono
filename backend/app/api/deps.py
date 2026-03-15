@@ -6,6 +6,7 @@ from ..core.config import settings
 from ..db.session import get_db
 from ..models import User
 from ..services.rbac import get_user_roles
+from ..services.user_lifecycle import ensure_user_lifecycle_state
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
@@ -29,6 +30,7 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
 
     user = db.query(User).filter(User.email == email).first()
+    user = ensure_user_lifecycle_state(db, user) if user else None
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive user")
     return user
@@ -42,6 +44,13 @@ def require_role(required_roles: list[str]):
         return user
 
     return _guard
+
+
+def require_non_service_recovery(db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> User:
+    user_roles = get_user_roles(db, user)
+    if "service_recovery" in user_roles:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
+    return user
 
 
 def get_scope(user: User):
@@ -64,7 +73,9 @@ def is_student_profile(user: User) -> bool:
     return bool(user.member and (user.member.status or "Student") == "Student")
 
 
-def require_marketplace_access(user: User = Depends(get_current_user)) -> User:
+def require_marketplace_access(db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> User:
+    if "service_recovery" in get_user_roles(db, user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
     if is_student_profile(user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Marketplace is only available to non-student profiles")
     return user

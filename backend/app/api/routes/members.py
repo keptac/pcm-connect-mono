@@ -12,7 +12,7 @@ from ...models import AcademicProgram, Member
 from ...schemas import AlumniConnectRead, MemberCreate, MemberRead, MemberSelfProfileUpdate, MemberUpdate
 from ...services.audit_log import log_action
 from ...services.rbac import get_user_roles
-from ..deps import CHAPTER_ROLES, GENERAL_NETWORK_ROLES, get_current_user, require_role, resolve_university_scope
+from ..deps import CHAPTER_ROLES, GENERAL_NETWORK_ROLES, require_non_service_recovery, require_role, resolve_university_scope
 
 router = APIRouter(prefix="/members", tags=["members"])
 
@@ -220,7 +220,7 @@ def list_alumni_connect(
 @router.get("/me-profile", response_model=MemberRead)
 def get_my_profile(
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_non_service_recovery),
 ):
     return _serialize(_linked_member_or_404(user, db))
 
@@ -229,7 +229,7 @@ def get_my_profile(
 def update_my_profile(
     payload: MemberSelfProfileUpdate,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_non_service_recovery),
 ):
     member = _linked_member_or_404(user, db)
     updates = payload.model_dump(exclude_unset=True)

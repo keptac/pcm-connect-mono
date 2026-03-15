@@ -29,7 +29,7 @@ export default function AdminPage() {
   });
   const [conferenceForm, setConferenceForm] = useState({
     name: "",
-    union_name: "Zimbabwe Union Conference",
+    union_name: "Zimbabwe East Union Conference",
     is_active: true
   });
   const [reportingPeriodForm, setReportingPeriodForm] = useState({
@@ -97,7 +97,7 @@ export default function AdminPage() {
     setSelectedConferenceId(null);
     setConferenceForm({
       name: "",
-      union_name: "Zimbabwe Union Conference",
+      union_name: "Zimbabwe East Union Conference",
       is_active: true
     });
   }
@@ -243,7 +243,7 @@ export default function AdminPage() {
                   </label>
                   <label className="field-shell">
                     <span className="field-label">Union name</span>
-                    <input className="field-input" value={conferenceForm.union_name} onChange={(event) => setConferenceForm({ ...conferenceForm, union_name: event.target.value })} placeholder="Zimbabwe Union Conference" />
+                    <input className="field-input" value={conferenceForm.union_name} onChange={(event) => setConferenceForm({ ...conferenceForm, union_name: event.target.value })} placeholder="Zimbabwe East Union Conference" />
                   </label>
                   <label className="field-shell field-checkbox">
                     <span className="field-label">Active conference</span>

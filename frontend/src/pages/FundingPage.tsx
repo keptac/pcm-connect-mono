@@ -10,6 +10,12 @@ import { useUniversityScope } from "../lib/universityScope";
 const inflowCategories = ["Donation", "Zunde", "Offering", "Subscriptions", "Other"];
 const outflowCategories = ["Programme Delivery", "Transport", "Administration", "Welfare", "Events", "Other"];
 const HQ_SCOPE = "hq";
+const CATEGORY_PAIR_WIDTH = 124;
+const CATEGORY_VISIBLE_PAIR_LIMIT = 7;
+const CATEGORY_MIN_CHART_WIDTH = 720;
+const PERIOD_PAIR_WIDTH = 96;
+const PERIOD_VISIBLE_PAIR_LIMIT = 4;
+const PERIOD_MIN_CHART_WIDTH = 320;
 const financeViewOptions = [
   { value: "all", label: "All Finance" },
   { value: "hq", label: "PCM HQ" },
@@ -227,6 +233,16 @@ export default function FundingPage() {
 
   const maxCategoryAmount = Math.max(1, ...categoryRows.flatMap((row) => [row.inflow, row.outflow]));
   const maxPeriodAmount = Math.max(1, ...periodRows.flatMap((row) => [row.inflow, row.outflow]));
+  const categoryChartWidth = Math.max(categoryRows.length * CATEGORY_PAIR_WIDTH, CATEGORY_MIN_CHART_WIDTH);
+  const categoryViewportWidth = Math.max(
+    Math.min(categoryRows.length, CATEGORY_VISIBLE_PAIR_LIMIT) * CATEGORY_PAIR_WIDTH,
+    CATEGORY_MIN_CHART_WIDTH,
+  );
+  const periodChartWidth = Math.max(periodRows.length * PERIOD_PAIR_WIDTH, PERIOD_MIN_CHART_WIDTH);
+  const periodViewportWidth = Math.max(
+    Math.min(periodRows.length, PERIOD_VISIBLE_PAIR_LIMIT) * PERIOD_PAIR_WIDTH,
+    PERIOD_MIN_CHART_WIDTH,
+  );
 
   function resetForm() {
     setSelectedId(null);
@@ -307,7 +323,7 @@ export default function FundingPage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[9fr_3fr]">
-        <Panel className="space-y-5">
+        <Panel className="min-w-0 space-y-5">
           <div className="flex items-end justify-between gap-4">
             <div>
               <p className="eyebrow">Category comparison</p>
@@ -331,10 +347,10 @@ export default function FundingPage() {
               description="Record receipts or expenditures to populate the category graph."
             />
           ) : (
-            <div className="finance-chart-scroll">
+            <div className="finance-chart-scroll" style={{ maxWidth: `${categoryViewportWidth}px` }}>
               <div
                 className="finance-chart finance-chart-wide"
-                style={{ minWidth: `${Math.max(categoryRows.length * 124, 720)}px` }}
+                style={{ width: `${categoryChartWidth}px` }}
               >
               {categoryRows.map((row) => (
                 <div key={row.label} className="finance-chart-group">
@@ -360,7 +376,6 @@ export default function FundingPage() {
                   </div>
                   <div className="finance-chart-labels">
                     <div className="finance-chart-label">{row.label}</div>
-                    <div className="finance-chart-caption">{formatCurrency(row.inflow)} in / {formatCurrency(row.outflow)} out</div>
                   </div>
                 </div>
               ))}
@@ -369,7 +384,7 @@ export default function FundingPage() {
           )}
         </Panel>
 
-        <Panel className="space-y-5">
+        <Panel className="min-w-0 space-y-5">
           <div className="flex items-end justify-between gap-4">
             <div>
               <p className="eyebrow">Cash movement</p>
@@ -390,10 +405,10 @@ export default function FundingPage() {
               description="Once records are saved, weekly and monthly movement will appear here."
             />
           ) : (
-            <div className="finance-chart-scroll finance-chart-scroll-compact">
+            <div className="finance-chart-scroll finance-chart-scroll-compact" style={{ maxWidth: `${periodViewportWidth}px` }}>
               <div
                 className="finance-chart finance-chart-compact"
-                style={{ minWidth: `${Math.max(periodRows.length * 96, 320)}px` }}
+                style={{ width: `${periodChartWidth}px` }}
               >
               {periodRows.map((row) => (
                 <div key={row.key} className="finance-chart-group finance-chart-group-compact">
@@ -419,7 +434,6 @@ export default function FundingPage() {
                   </div>
                   <div className="finance-chart-labels">
                     <div className="finance-chart-label">{row.label}</div>
-                    <div className="finance-chart-caption">{formatCurrency(row.inflow)} / {formatCurrency(row.outflow)}</div>
                   </div>
                 </div>
               ))}

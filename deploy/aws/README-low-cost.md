@@ -222,7 +222,7 @@ On the instance:
 
 ```bash
 sudo apt update
-sudo apt install -y docker.io git curl
+sudo apt install -y docker.io git
 sudo usermod -aG docker $USER
 ```
 
@@ -231,9 +231,9 @@ Log out and back in so your user gets Docker access.
 Then install the Docker Compose plugin:
 
 ```bash
-mkdir -p "$HOME/.docker/cli-plugins"
-curl -fSL "https://github.com/docker/compose/releases/download/v2.39.1/docker-compose-linux-x86_64" --output "$HOME/.docker/cli-plugins/docker-compose"
-chmod +x "$HOME/.docker/cli-plugins/docker-compose"
+mkdir -p ~/.docker/cli-plugins
+curl -SL https://github.com/docker/compose/releases/download/v2.39.1/docker-compose-linux-x86_64 -o ~/.docker/cli-plugins/docker-compose
+chmod +x ~/.docker/cli-plugins/docker-compose
 docker compose version
 ```
 
@@ -366,14 +366,112 @@ Set these in your GitHub `production` environment:
 - `LIGHTSAIL_APP_DIR=/home/ubuntu/pcm-system`
 - optional `LIGHTSAIL_SSH_PORT=22`
 
+### Create the AWS OIDC provider for GitHub Actions
+
+This is needed for the frontend deploy job only.
+
+In AWS Console:
+
+1. Open `IAM`
+2. Go to `Identity providers`
+3. Choose `Add provider`
+4. Provider type: `OpenID Connect`
+5. Provider URL: `https://token.actions.githubusercontent.com`
+6. Audience: `sts.amazonaws.com`
+7. Create the provider
+
+If you already created this provider in the account, do not create it again.
+
+### Create the AWS deploy role for GitHub Actions
+
+In AWS Console:
+
+1. Open `IAM`
+2. Go to `Roles`
+3. Choose `Create role`
+4. Trusted entity type: `Web identity`
+5. Identity provider: `token.actions.githubusercontent.com`
+6. Audience: `sts.amazonaws.com`
+7. Create the role with a name such as `GitHubActionsPcmDeployRole`
+
+If the AWS console asks for `GitHub organization`, use `keptac`.
+For this repo, that field means the GitHub repository owner, and the repo is `keptac/pcm-connect-mono`.
+
+After the role is created, edit its trust policy so only this repo and environment can assume it:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::YOUR_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:keptac/pcm-connect-mono:environment:production"
+        }
+      }
+    }
+  ]
+}
+```
+
+Then attach a policy that lets the workflow upload the frontend to your bucket and invalidate CloudFront:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:GetBucketLocation"
+      ],
+      "Resource": "arn:aws:s3:::YOUR_BUCKET_NAME"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::YOUR_BUCKET_NAME/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:CreateInvalidation"
+      ],
+      "Resource": "arn:aws:cloudfront::YOUR_ACCOUNT_ID:distribution/YOUR_DISTRIBUTION_ID"
+    }
+  ]
+}
+```
+
+Copy the role ARN from the role details page. It will look like:
+
+```text
+arn:aws:iam::123456789012:role/GitHubActionsPcmDeployRole
+```
+
 ### GitHub production secrets
 
 Set these in the same GitHub `production` environment:
 
 - `AWS_ROLE_TO_ASSUME`
+  - paste the IAM role ARN you just copied
   - used by the frontend deploy job for `S3` and `CloudFront`
 - `LIGHTSAIL_SSH_PRIVATE_KEY`
+  - paste the raw private key text, including the `BEGIN` and `END` lines
   - use a dedicated SSH private key that can log in to the Lightsail instance
+  - do not paste the `.pub` file
+  - use an unencrypted key for this workflow, or the job will not be able to unlock it
 
 On every push to `main`, the backend job connects to the instance, checks out the pushed branch, pulls the latest code, and runs:
 
@@ -421,3 +519,6 @@ At that point, move to:
 - S3 static hosting overview: https://docs.aws.amazon.com/AmazonS3/latest/dev/WebsiteHosting.html
 - CloudFront origin settings: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html
 - Restrict access to S3 origin with CloudFront OAC: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html
+- Create an IAM OIDC identity provider: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_create_oidc.html
+- Create a role for OIDC federation: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-idp_oidc.html
+- GitHub OIDC with AWS: https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws

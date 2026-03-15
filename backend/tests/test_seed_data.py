@@ -25,6 +25,7 @@ from app.models import (
     Role,
     University,
     User,
+    UserRole,
 )
 
 
@@ -51,3 +52,14 @@ def test_seed_data_bootstraps_reference_catalog_and_marketplace_fixture_accounts
         assert db.query(ProgramBroadcast).count() == 0
         assert db.query(MarketplaceListing).count() > 0
         assert len({listing.user_id for listing in db.query(MarketplaceListing).all()}) > 1
+
+        recovery_account = db.query(User).filter(User.email == "adam@pcm.service").first()
+        assert recovery_account is not None
+        assert recovery_account.name == "PCM Recovery Service"
+        assert recovery_account.is_active is True
+        assert recovery_account.subject_to_tenure is False
+        recovery_role_names = [
+            role.name
+            for role in db.query(Role).join(UserRole, UserRole.role_id == Role.id).filter(UserRole.user_id == recovery_account.id).all()
+        ]
+        assert recovery_role_names == ["service_recovery"]

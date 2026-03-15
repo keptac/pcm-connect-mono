@@ -15,7 +15,7 @@ from ...schemas import (
     ChatMessageRead,
 )
 from ...services.rbac import get_user_roles
-from ..deps import get_current_user
+from ..deps import require_non_service_recovery
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
@@ -106,7 +106,7 @@ def _find_direct_thread(db: Session, user_a_id: int, user_b_id: int) -> ChatThre
 @router.get("/contacts", response_model=list[ChatContactRead])
 def list_contacts(
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_non_service_recovery),
 ):
     contacts = (
         db.query(User)
@@ -118,7 +118,7 @@ def list_contacts(
 
 
 @router.get("/e2ee-key-bundle", response_model=ChatKeyBundleRead)
-def get_key_bundle(user=Depends(get_current_user)):
+def get_key_bundle(user=Depends(require_non_service_recovery)):
     return ChatKeyBundleRead(
         public_key=user.chat_public_key,
         private_key_encrypted=user.chat_private_key_encrypted,
@@ -132,7 +132,7 @@ def get_key_bundle(user=Depends(get_current_user)):
 def upsert_key_bundle(
     payload: ChatKeyBundleUpdate,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_non_service_recovery),
 ):
     user.chat_public_key = payload.public_key
     user.chat_private_key_encrypted = payload.private_key_encrypted
@@ -153,7 +153,7 @@ def upsert_key_bundle(
 @router.get("/conversations", response_model=list[ChatConversationRead])
 def list_conversations(
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_non_service_recovery),
 ):
     threads = (
         db.query(ChatThread)
@@ -169,7 +169,7 @@ def list_conversations(
 def start_direct_conversation(
     payload: ChatConversationCreate,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_non_service_recovery),
 ):
     if payload.recipient_user_id == user.id:
         raise HTTPException(status_code=400, detail="Cannot start a conversation with yourself")
@@ -199,7 +199,7 @@ def start_direct_conversation(
 def list_messages(
     thread_id: int,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_non_service_recovery),
 ):
     thread = _ensure_participant(db, thread_id, user.id)
     messages = sorted(thread.messages, key=lambda item: item.created_at)
@@ -211,7 +211,7 @@ def send_message(
     thread_id: int,
     payload: ChatMessageCreate,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_non_service_recovery),
 ):
     thread = _ensure_participant(db, thread_id, user.id)
     body = (payload.body or "").strip()
@@ -243,7 +243,7 @@ def send_message(
 def mark_messages_read(
     thread_id: int,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_non_service_recovery),
 ):
     thread = _ensure_participant(db, thread_id, user.id)
     updated = 0

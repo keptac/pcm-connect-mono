@@ -13,7 +13,7 @@ from ...schemas import (
     ProgramBroadcastUpdate,
 )
 from ...services.audit_log import log_action
-from ..deps import CHAPTER_ROLES, get_current_user, require_role, resolve_university_scope
+from ..deps import CHAPTER_ROLES, require_non_service_recovery, require_role, resolve_university_scope
 
 router = APIRouter(prefix="/broadcasts", tags=["broadcasts"])
 
@@ -110,7 +110,7 @@ def list_broadcasts(
     university_id: int | None = None,
     program_id: int | None = None,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_non_service_recovery),
 ):
     viewer_university_id = resolve_university_scope(user, university_id)
     query = db.query(ProgramBroadcast).order_by(ProgramBroadcast.created_at.desc(), ProgramBroadcast.id.desc())
@@ -186,7 +186,7 @@ def respond_to_broadcast(
     broadcast_id: int,
     payload: BroadcastInviteUpdate,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_non_service_recovery),
 ):
     if not user.university_id:
         raise HTTPException(status_code=400, detail="Only university-scoped users can respond to invitations")

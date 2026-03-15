@@ -59,6 +59,14 @@ class Settings(BaseSettings):
         "admin123",
         validation_alias=AliasChoices("ADMIN_PASSWORD", "admin_password"),
     )
+    service_recovery_email: str = Field(
+        "adam@pcm.service",
+        validation_alias=AliasChoices("SERVICE_RECOVERY_EMAIL", "service_recovery_email"),
+    )
+    service_recovery_password: str = Field(
+        "change-me-service-password",
+        validation_alias=AliasChoices("SERVICE_RECOVERY_PASSWORD", "service_recovery_password"),
+    )
     cors_origins: str = Field(
         "http://localhost:5173",
         validation_alias=AliasChoices("CORS_ORIGINS", "cors_origins"),

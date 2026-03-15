@@ -1,5 +1,5 @@
-from datetime import datetime
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from datetime import date, datetime
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from ..db.base import Base
@@ -15,6 +15,13 @@ class User(Base):
     university_id = Column(Integer, ForeignKey("universities.id"), nullable=True)
     member_id = Column(UUID(as_uuid=True), ForeignKey("members.id"), nullable=True, unique=True)
     is_active = Column(Boolean, default=True)
+    is_system_admin = Column(Boolean, default=False, nullable=False)
+    subject_to_tenure = Column(Boolean, default=False, nullable=False)
+    force_password_reset = Column(Boolean, default=False, nullable=False)
+    tenure_starts_on = Column(Date, nullable=True)
+    tenure_ends_on = Column(Date, nullable=True)
+    disabled_at = Column(DateTime, nullable=True)
+    deleted_at = Column(DateTime, nullable=True)
     donor_interest = Column(Boolean, default=False, nullable=False)
     chat_public_key = Column(Text, nullable=True)
     chat_private_key_encrypted = Column(Text, nullable=True)

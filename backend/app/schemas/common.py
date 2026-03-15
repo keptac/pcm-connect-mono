@@ -137,6 +137,26 @@ class UserCreate(SchemaModel):
     password: str
     university_id: Optional[int] = None
     roles: List[str] = Field(default_factory=list)
+    force_password_reset: bool = False
+    tenure_months: int = 24
+    tenure_starts_on: Optional[date] = None
+
+
+class UserUpdate(SchemaModel):
+    email: Optional[str] = None
+    name: Optional[str] = None
+    password: Optional[str] = None
+    university_id: Optional[int] = None
+    roles: Optional[List[str]] = None
+    force_password_reset: Optional[bool] = None
+    tenure_months: Optional[int] = None
+    tenure_starts_on: Optional[date] = None
+    is_active: Optional[bool] = None
+
+
+class UserPasswordRecovery(SchemaModel):
+    new_password: str
+    force_password_reset: bool = True
 
 
 class UserRead(SchemaModel):
@@ -144,6 +164,7 @@ class UserRead(SchemaModel):
     email: str
     name: Optional[str] = None
     university_id: Optional[int] = None
+    university_name: Optional[str] = None
     member_id: Optional[str] = None
     member_number: Optional[str] = None
     member_status: Optional[str] = None
@@ -151,6 +172,14 @@ class UserRead(SchemaModel):
     member_university_name: Optional[str] = None
     donor_interest: bool = False
     is_active: bool
+    is_system_admin: bool = False
+    subject_to_tenure: bool = False
+    force_password_reset: bool = False
+    tenure_months: Optional[int] = None
+    tenure_starts_on: Optional[date] = None
+    tenure_ends_on: Optional[date] = None
+    disabled_at: Optional[datetime] = None
+    deletion_due_at: Optional[date] = None
     roles: List[str]
 
 

@@ -5,7 +5,7 @@ from ...db.session import get_db
 from ...models import MandatoryProgram
 from ...schemas import MandatoryProgramCreate, MandatoryProgramRead, MandatoryProgramUpdate
 from ...services.audit_log import log_action
-from ..deps import get_current_user, require_role
+from ..deps import require_non_service_recovery, require_role
 
 router = APIRouter(prefix="/mandatory-programs", tags=["mandatory-programs"])
 
@@ -29,7 +29,7 @@ def list_mandatory_programs(
     program_type: str | None = None,
     include_inactive: bool = False,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_non_service_recovery),
 ):
     query = db.query(MandatoryProgram).order_by(MandatoryProgram.sort_order.asc(), MandatoryProgram.name.asc())
     if program_type:

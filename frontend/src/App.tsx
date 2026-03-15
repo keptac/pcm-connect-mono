@@ -15,6 +15,7 @@ import MissionReportsPage from "./pages/MissionReportsPage";
 import MyProfilePage from "./pages/MyProfilePage";
 import OverviewPage from "./pages/OverviewPage";
 import ProgramsPage from "./pages/ProgramsPage";
+import SupportInfoPage from "./pages/SupportInfoPage";
 import UpdatesPage from "./pages/UpdatesPage";
 import UniversitiesPage from "./pages/UniversitiesPage";
 import UsersPage from "./pages/UsersPage";
@@ -23,6 +24,9 @@ import { useAuthStore } from "./store/auth";
 function HomeRoute() {
   const user = useAuthStore((state) => state.user);
   if (!user) return null;
+  if (user.roles.includes("service_recovery")) {
+    return <Navigate to="/team" replace />;
+  }
   if (user.roles.includes("general_user")) {
     return <Navigate to="/marketplace" replace />;
   }
@@ -45,6 +49,10 @@ export default function App() {
         <Route path="messages" element={<MessagesPage />} />
         <Route path="mission-reports" element={<MissionReportsPage />} />
         <Route path="updates" element={<UpdatesPage />} />
+        <Route path="help" element={<SupportInfoPage variant="help" />} />
+        <Route path="help/contact" element={<SupportInfoPage variant="contact" />} />
+        <Route path="help/terms" element={<SupportInfoPage variant="terms" />} />
+        <Route path="help/privacy" element={<SupportInfoPage variant="privacy" />} />
         <Route path="reports" element={<Navigate to="/updates" replace />} />
         <Route path="funding" element={<FundingPage />} />
         <Route path="universities" element={<UniversitiesPage />} />

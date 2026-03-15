@@ -5,7 +5,7 @@ from ...db.session import get_db
 from ...models import ReportingPeriod
 from ...schemas import ReportingPeriodCreate, ReportingPeriodRead, ReportingPeriodUpdate
 from ...services.audit_log import log_action
-from ..deps import get_current_user, require_role
+from ..deps import require_non_service_recovery, require_role
 
 router = APIRouter(prefix="/reporting-periods", tags=["reporting-periods"])
 
@@ -34,7 +34,7 @@ def _validate_dates(start_date, end_date) -> None:
 def list_reporting_periods(
     include_inactive: bool = False,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_non_service_recovery),
 ):
     query = db.query(ReportingPeriod).order_by(ReportingPeriod.sort_order.desc(), ReportingPeriod.start_date.desc(), ReportingPeriod.code.desc())
     if not include_inactive:

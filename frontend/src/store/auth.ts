@@ -6,12 +6,22 @@ type User = {
   name?: string | null;
   roles: string[];
   university_id?: number | null;
+  university_name?: string | null;
   member_id?: string | null;
   member_number?: string | null;
   member_status?: string | null;
   member_university_id?: number | null;
   member_university_name?: string | null;
   donor_interest?: boolean;
+  is_active?: boolean;
+  is_system_admin?: boolean;
+  subject_to_tenure?: boolean;
+  force_password_reset?: boolean;
+  tenure_months?: number | null;
+  tenure_starts_on?: string | null;
+  tenure_ends_on?: string | null;
+  disabled_at?: string | null;
+  deletion_due_at?: string | null;
 };
 
 type AuthState = {

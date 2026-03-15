@@ -22,6 +22,7 @@ function scopedParams(universityId?: number | null, extra?: Record<string, unkno
 export const authApi = {
   login: (email: string, password: string) => api.post("/auth/login", { email, password }).then((res) => res.data),
   refresh: (refreshToken: string) => api.post("/auth/refresh", { refresh_token: refreshToken }).then((res) => res.data),
+  changePassword: (payload: any) => api.post("/auth/change-password", payload).then((res) => res.data),
   lookupGeneralUser: (payload: any) => api.post("/auth/general-registration/search", payload).then((res) => res.data),
   registerGeneralUser: (payload: any) => api.post("/auth/general-registration/register", payload).then((res) => res.data)
 };
@@ -56,7 +57,9 @@ export const academicProgramsApi = {
 
 export const usersApi = {
   list: () => api.get("/users").then((res) => res.data),
-  create: (payload: any) => api.post("/users", payload).then((res) => res.data)
+  create: (payload: any) => api.post("/users", payload).then((res) => res.data),
+  update: (id: number, payload: any) => api.patch(`/users/${id}`, payload).then((res) => res.data),
+  recoverPassword: (id: number, payload: any) => api.post(`/users/${id}/recover-password`, payload).then((res) => res.data)
 };
 
 export const membersApi = {

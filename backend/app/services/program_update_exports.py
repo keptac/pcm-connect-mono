@@ -95,7 +95,7 @@ def build_program_update_pdf(update: ProgramUpdate) -> bytes:
         _build_metric_cards(update, styles),
         Spacer(1, 12),
         _build_attendance_chart(update, styles),
-        Spacer(1, 10),
+        PageBreak(),
         Paragraph("Program context", styles["section"]),
         _build_context_table(update, styles),
         Spacer(1, 10),

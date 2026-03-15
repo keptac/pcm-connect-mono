@@ -24,11 +24,15 @@ async function persistSession(
   refreshToken: string,
   password: string,
   queryClient: ReturnType<typeof useQueryClient>,
+  options?: { deferChatBootstrap?: boolean },
 ) {
   localStorage.setItem("pcm_access_token", accessToken);
   localStorage.setItem("pcm_refresh_token", refreshToken);
   queryClient.clear();
   clearSessionWrappingKey();
+  if (options?.deferChatBootstrap) {
+    return;
+  }
   try {
     await bootstrapChatKeys(password, messagesApi.getKeyBundle, messagesApi.setKeyBundle);
   } catch {
@@ -143,7 +147,9 @@ export default function LoginPage() {
                 setError("");
                 try {
                   const data = await authApi.login(email, password);
-                  await persistSession(data.access_token, data.refresh_token, password, queryClient);
+                  await persistSession(data.access_token, data.refresh_token, password, queryClient, {
+                    deferChatBootstrap: Boolean(data.password_reset_required)
+                  });
                   navigate("/", { replace: true });
                 } catch (err: any) {
                   setError(err?.response?.data?.detail || "Login failed");

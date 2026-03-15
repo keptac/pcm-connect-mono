@@ -6,6 +6,7 @@ from .common import UserRead
 class TokenPair(BaseModel):
     access_token: str
     refresh_token: str
+    password_reset_required: bool = False
     token_type: str = "bearer"
 
 
@@ -16,6 +17,11 @@ class LoginRequest(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 
 class GeneralUserLookupRequest(BaseModel):
