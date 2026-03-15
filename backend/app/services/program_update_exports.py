@@ -1,0 +1,1315 @@
+import json
+from io import BytesIO
+from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
+
+from reportlab.graphics.shapes import Drawing, Line, Rect, String
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import (
+    Image,
+    PageBreak,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
+from xml.sax.saxutils import escape
+
+from ..core.config import settings
+from ..models import ProgramUpdate
+
+PCM_BLUE = colors.HexColor("#233A78")
+PCM_VIOLET = colors.HexColor("#5641A7")
+PCM_RED = colors.HexColor("#D33D48")
+PCM_SKY = colors.HexColor("#4A9BD6")
+PCM_GOLD = colors.HexColor("#D6A73D")
+PCM_SLATE = colors.HexColor("#64748B")
+PCM_BORDER = colors.HexColor("#D7E0EE")
+PCM_SURFACE = colors.HexColor("#F8FBFF")
+CONTENT_WIDTH = A4[0] - (32 * mm)
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+LOGO_PATHS = (
+    Path(__file__).resolve().parents[1] / "assets" / "pcm_logo.png",
+    REPO_ROOT / "frontend" / "src" / "images" / "pcm_logo.png",
+)
+FONT_CANDIDATES = {
+    "regular": (
+        Path(__file__).resolve().parents[1] / "assets" / "fonts" / "Poppins-Regular.ttf",
+        Path.home() / "Library" / "Fonts" / "Poppins-Regular.ttf",
+    ),
+    "semibold": (
+        Path(__file__).resolve().parents[1] / "assets" / "fonts" / "Poppins-SemiBold.ttf",
+        Path.home() / "Library" / "Fonts" / "Poppins-SemiBold.ttf",
+    ),
+    "bold": (
+        Path(__file__).resolve().parents[1] / "assets" / "fonts" / "Poppins-Bold.ttf",
+        Path.home() / "Library" / "Fonts" / "Poppins-Bold.ttf",
+    ),
+}
+PDF_FONT_NAMES = {
+    "regular": "Helvetica",
+    "semibold": "Helvetica-Bold",
+    "bold": "Helvetica-Bold",
+}
+PDF_FONT_REGISTRATION_ATTEMPTED = False
+
+
+def build_program_update_report_pack(updates: list[ProgramUpdate]) -> bytes:
+    bundle = BytesIO()
+    with ZipFile(bundle, "w", ZIP_DEFLATED) as archive:
+        for index, update in enumerate(updates, start=1):
+            filename = f"{index:02d}_{_slugify(_report_title(update))}.pdf"
+            archive.writestr(filename, build_program_update_pdf(update))
+    return bundle.getvalue()
+
+
+def build_program_update_pdf(update: ProgramUpdate) -> bytes:
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=16 * mm,
+        rightMargin=16 * mm,
+        topMargin=34 * mm,
+        bottomMargin=16 * mm,
+        title=_report_title(update),
+        author="Public Campus Ministries",
+    )
+    styles = _build_styles()
+    image_attachments, document_attachments = _resolve_attachments(update)
+
+    story = [
+        *_build_cover_page(update, styles),
+        PageBreak(),
+        _build_hero(update, styles),
+        Spacer(1, 8),
+        _build_metric_cards(update, styles),
+        Spacer(1, 12),
+        _build_attendance_chart(update, styles),
+        Spacer(1, 10),
+        Paragraph("Program context", styles["section"]),
+        _build_context_table(update, styles),
+        Spacer(1, 10),
+        Paragraph("Narrative summary", styles["section"]),
+        _build_summary_callout(update, styles),
+        Spacer(1, 10),
+    ]
+
+    story.extend(_build_narrative_sections(update, styles))
+
+    if image_attachments:
+        story.extend(
+            [
+                PageBreak(),
+                Paragraph("Evidence gallery", styles["section"]),
+                Paragraph(
+                    "Photos attached to this update are arranged below as visual evidence of participation and delivery.",
+                    styles["bodyMuted"],
+                ),
+                Spacer(1, 8),
+                _build_gallery(image_attachments, styles),
+            ]
+        )
+
+    if document_attachments:
+        story.extend(
+            [
+                Spacer(1, 12),
+                Paragraph("Supporting documents", styles["section"]),
+                Paragraph(
+                    "Additional documents uploaded with this update are listed here for reference in the system record.",
+                    styles["bodyMuted"],
+                ),
+                Spacer(1, 6),
+                _build_document_table(document_attachments, styles),
+            ]
+        )
+
+    doc.build(
+        story,
+        onFirstPage=lambda canvas, built_doc: _decorate_cover_page(canvas, built_doc, update),
+        onLaterPages=lambda canvas, built_doc: _decorate_page(canvas, built_doc, update),
+    )
+    return buffer.getvalue()
+
+
+def _build_styles():
+    fonts = _ensure_pdf_fonts()
+    sample = getSampleStyleSheet()
+    return {
+        "heroTitle": ParagraphStyle(
+            "heroTitle",
+            parent=sample["Heading1"],
+            fontName=fonts["bold"],
+            fontSize=19,
+            leading=23,
+            textColor=colors.white,
+            spaceAfter=4,
+        ),
+        "heroMeta": ParagraphStyle(
+            "heroMeta",
+            parent=sample["BodyText"],
+            fontName=fonts["regular"],
+            fontSize=9.5,
+            leading=12,
+            textColor=colors.white,
+            alignment=TA_RIGHT,
+        ),
+        "coverEyebrow": ParagraphStyle(
+            "coverEyebrow",
+            parent=sample["BodyText"],
+            fontName=fonts["semibold"],
+            fontSize=10,
+            leading=12,
+            textColor=PCM_RED,
+            alignment=TA_CENTER,
+        ),
+        "coverTitle": ParagraphStyle(
+            "coverTitle",
+            parent=sample["Heading1"],
+            fontName=fonts["bold"],
+            fontSize=24,
+            leading=28,
+            textColor=PCM_BLUE,
+            alignment=TA_CENTER,
+        ),
+        "coverSubtitle": ParagraphStyle(
+            "coverSubtitle",
+            parent=sample["BodyText"],
+            fontName=fonts["regular"],
+            fontSize=11,
+            leading=15,
+            textColor=PCM_SLATE,
+            alignment=TA_CENTER,
+        ),
+        "coverFactLabel": ParagraphStyle(
+            "coverFactLabel",
+            parent=sample["BodyText"],
+            fontName=fonts["semibold"],
+            fontSize=8,
+            leading=10,
+            textColor=PCM_SLATE,
+        ),
+        "coverFactValue": ParagraphStyle(
+            "coverFactValue",
+            parent=sample["BodyText"],
+            fontName=fonts["semibold"],
+            fontSize=10,
+            leading=13,
+            textColor=PCM_BLUE,
+        ),
+        "section": ParagraphStyle(
+            "section",
+            parent=sample["Heading2"],
+            fontName=fonts["bold"],
+            fontSize=13,
+            leading=16,
+            textColor=PCM_BLUE,
+            spaceAfter=6,
+        ),
+        "chartTitle": ParagraphStyle(
+            "chartTitle",
+            parent=sample["Heading2"],
+            fontName=fonts["bold"],
+            fontSize=11,
+            leading=13,
+            textColor=PCM_BLUE,
+        ),
+        "body": ParagraphStyle(
+            "body",
+            parent=sample["BodyText"],
+            fontName=fonts["regular"],
+            fontSize=9.5,
+            leading=14,
+            textColor=colors.HexColor("#243446"),
+        ),
+        "bodyMuted": ParagraphStyle(
+            "bodyMuted",
+            parent=sample["BodyText"],
+            fontName=fonts["regular"],
+            fontSize=9,
+            leading=13,
+            textColor=PCM_SLATE,
+        ),
+        "callout": ParagraphStyle(
+            "callout",
+            parent=sample["BodyText"],
+            fontName=fonts["regular"],
+            fontSize=10,
+            leading=14,
+            textColor=colors.HexColor("#18324E"),
+        ),
+        "metricLabel": ParagraphStyle(
+            "metricLabel",
+            parent=sample["BodyText"],
+            fontName=fonts["semibold"],
+            fontSize=8.2,
+            leading=10,
+            textColor=PCM_SLATE,
+        ),
+        "metricValue": ParagraphStyle(
+            "metricValue",
+            parent=sample["BodyText"],
+            fontName=fonts["bold"],
+            fontSize=13.5,
+            leading=16,
+            textColor=PCM_BLUE,
+        ),
+        "metricHelper": ParagraphStyle(
+            "metricHelper",
+            parent=sample["BodyText"],
+            fontName=fonts["regular"],
+            fontSize=7.8,
+            leading=10,
+            textColor=PCM_SLATE,
+        ),
+        "insightTitle": ParagraphStyle(
+            "insightTitle",
+            parent=sample["BodyText"],
+            fontName=fonts["semibold"],
+            fontSize=9.5,
+            leading=12,
+            textColor=PCM_BLUE,
+        ),
+        "insightBody": ParagraphStyle(
+            "insightBody",
+            parent=sample["BodyText"],
+            fontName=fonts["regular"],
+            fontSize=8.5,
+            leading=11,
+            textColor=PCM_SLATE,
+        ),
+        "tableLabel": ParagraphStyle(
+            "tableLabel",
+            parent=sample["BodyText"],
+            fontName=fonts["semibold"],
+            fontSize=8,
+            leading=10,
+            textColor=PCM_SLATE,
+        ),
+        "tableValue": ParagraphStyle(
+            "tableValue",
+            parent=sample["BodyText"],
+            fontName=fonts["regular"],
+            fontSize=9.5,
+            leading=13,
+            textColor=colors.HexColor("#223247"),
+        ),
+        "galleryCaption": ParagraphStyle(
+            "galleryCaption",
+            parent=sample["BodyText"],
+            fontName=fonts["regular"],
+            fontSize=8.5,
+            leading=11,
+            alignment=TA_CENTER,
+            textColor=PCM_SLATE,
+        ),
+        "docName": ParagraphStyle(
+            "docName",
+            parent=sample["BodyText"],
+            fontName=fonts["semibold"],
+            fontSize=9,
+            leading=12,
+            textColor=PCM_BLUE,
+        ),
+        "docMeta": ParagraphStyle(
+            "docMeta",
+            parent=sample["BodyText"],
+            fontName=fonts["regular"],
+            fontSize=8.5,
+            leading=11,
+            textColor=PCM_SLATE,
+        ),
+        "valueRight": ParagraphStyle(
+            "valueRight",
+            parent=sample["BodyText"],
+            fontName=fonts["semibold"],
+            fontSize=9.5,
+            leading=12,
+            textColor=PCM_BLUE,
+            alignment=TA_RIGHT,
+        ),
+    }
+
+
+def _build_cover_page(update: ProgramUpdate, styles):
+    university = update.university
+    conference = university.conference if university else None
+    metrics = _collect_report_metrics(update)
+    cover_elements = [Spacer(1, 18 * mm)]
+
+    logo_path = _logo_path()
+    if logo_path:
+        logo = _scaled_image(logo_path, 34 * mm, 34 * mm)
+        if logo is not None:
+            logo.hAlign = "CENTER"
+            cover_elements.extend([logo, Spacer(1, 8 * mm)])
+
+    cover_elements.extend(
+        [
+            Paragraph("Public Campus Ministries", styles["coverEyebrow"]),
+            Spacer(1, 3 * mm),
+            Paragraph("Impact Report", styles["coverTitle"]),
+            Spacer(1, 2 * mm),
+            Paragraph(_safe_text(_display_event_name(update)), styles["coverSubtitle"]),
+            Spacer(1, 8 * mm),
+            _build_cover_identity_table(update, styles),
+            Spacer(1, 7 * mm),
+            _build_cover_snapshot_table(_build_cover_metric_items(metrics), styles),
+            Spacer(1, 7 * mm),
+            _build_cover_summary_panel(update, styles),
+        ]
+    )
+    return cover_elements
+
+
+def _build_hero(update: ProgramUpdate, styles):
+    title = _display_event_name(update)
+    schedule = _program_schedule(update)
+    right_note = "<br/>".join(
+        part
+        for part in [
+            f"<b>Reporting period:</b> {escape(update.reporting_period or 'Not set')}",
+            f"<b>Generated:</b> {_format_datetime(update.updated_at or update.created_at)}",
+            f"<b>Audience:</b> {escape(update.program.audience) if update.program and update.program.audience else 'General'}",
+        ]
+        if part
+    )
+    hero = Table(
+        [[
+            Paragraph(
+                f"{escape(title)}<br/><font size='10'>{escape(update.university.name if update.university else 'PCM network')} | {escape(schedule)}</font>",
+                styles["heroTitle"],
+            ),
+            Paragraph(right_note, styles["heroMeta"]),
+        ]],
+        colWidths=[118 * mm, 56 * mm],
+    )
+    hero.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (0, 0), PCM_BLUE),
+                ("BACKGROUND", (1, 0), (1, 0), PCM_VIOLET),
+                ("TEXTCOLOR", (0, 0), (-1, -1), colors.white),
+                ("BOX", (0, 0), (-1, -1), 1, PCM_BORDER),
+                ("INNERGRID", (0, 0), (-1, -1), 1, colors.white),
+                ("LEFTPADDING", (0, 0), (-1, -1), 16),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 16),
+                ("TOPPADDING", (0, 0), (-1, -1), 14),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    return hero
+
+
+def _build_metric_cards(update: ProgramUpdate, styles):
+    return _build_metric_grid(_build_detailed_metric_items(_collect_report_metrics(update)), styles, columns=3)
+
+
+def _build_attendance_chart(update: ProgramUpdate, styles):
+    fonts = _ensure_pdf_fonts()
+    metrics = _collect_report_metrics(update)
+    expected = metrics["expected"]
+    actual = metrics["actual"]
+    volunteers = metrics["volunteers"]
+    visual_width = 104 * mm
+    visual_height = 48 * mm
+    chart = Drawing(visual_width, visual_height)
+
+    baseline_y = 10 * mm
+    chart_height = 26 * mm
+    chart_width = 70 * mm
+    origin_x = 10 * mm
+    chart.add(Line(origin_x, baseline_y, origin_x + chart_width, baseline_y, strokeColor=PCM_BORDER, strokeWidth=1))
+
+    chart_series = [
+        ("Expected", expected, PCM_BLUE),
+        ("Actual", actual, PCM_RED),
+        ("Volunteers", volunteers, PCM_VIOLET),
+    ]
+    maximum = max([value for _, value, _ in chart_series] + [1])
+    bar_width = 14 * mm
+    gap = 9 * mm
+
+    for index, (label, value, color) in enumerate(chart_series):
+        x = origin_x + (6 * mm) + (index * (bar_width + gap))
+        bar_height = chart_height * (value / maximum) if maximum else 0
+        chart.add(Rect(x, baseline_y, bar_width, chart_height, fillColor=colors.HexColor("#E7EEF8"), strokeColor=None))
+        chart.add(Rect(x, baseline_y, bar_width, bar_height, fillColor=color, strokeColor=None))
+        chart.add(
+            String(
+                x + (bar_width / 2),
+                baseline_y + chart_height + 5,
+                _format_number(value),
+                fontName=fonts["bold"],
+                fontSize=8.5,
+                fillColor=PCM_BLUE,
+                textAnchor="middle",
+            )
+        )
+        chart.add(
+            String(
+                x + (bar_width / 2),
+                baseline_y - 10,
+                label,
+                fontName=fonts["regular"],
+                fontSize=8,
+                fillColor=PCM_SLATE,
+                textAnchor="middle",
+            )
+        )
+
+    insight_panel = Table(
+        [
+            [Paragraph("Insight", styles["insightTitle"])],
+            [Paragraph(_safe_text(_build_report_insight(metrics, include_funds=False)), styles["insightBody"])],
+        ],
+        colWidths=[54 * mm],
+    )
+    insight_panel.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                ("BOX", (0, 0), (-1, -1), 1, PCM_BORDER),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+
+    content = Table([[chart, insight_panel]], colWidths=[110 * mm, 58 * mm])
+    content.setStyle(
+        TableStyle(
+            [
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+
+    card = Table(
+        [
+            [Paragraph("Attendance and mobilization", styles["chartTitle"])],
+            [content],
+        ],
+        colWidths=[CONTENT_WIDTH],
+    )
+    card.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), PCM_SURFACE),
+                ("BOX", (0, 0), (-1, -1), 1, PCM_BORDER),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    return card
+
+
+def _build_context_table(update: ProgramUpdate, styles):
+    expected = max(int(update.program.target_beneficiaries or 0), 0) if update.program else 0
+    rows = [
+        ("University / campus", update.university.name if update.university else "PCM HQ / Network"),
+        ("Linked ministry program", update.program.name if update.program else "Not linked"),
+        ("Program audience", update.program.audience if update.program and update.program.audience else "General"),
+        ("Schedule", _program_schedule(update)),
+        ("Duration", _format_duration(update.program.duration_weeks if update.program else None)),
+        ("Expected attendance / reach", _format_number(expected) if expected else "Not configured"),
+    ]
+    table = Table(
+        [
+            [Paragraph(escape(label), styles["tableLabel"]), Paragraph(escape(value), styles["tableValue"])]
+            for label, value in rows
+        ],
+        colWidths=[52 * mm, 122 * mm],
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                ("BOX", (0, 0), (-1, -1), 1, PCM_BORDER),
+                ("INNERGRID", (0, 0), (-1, -1), 0.8, PCM_BORDER),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F7FAFD")),
+            ]
+        )
+    )
+    return table
+
+
+def _build_cover_identity_table(update: ProgramUpdate, styles):
+    university = update.university
+    conference = university.conference if university else None
+    rows = [
+        ("University / campus", university.name if university else "PCM network"),
+        ("Conference", conference.name if conference else "Not assigned"),
+        ("Union", conference.union_name if conference and conference.union_name else "Not assigned"),
+        ("Reporting period", update.reporting_period or "Not set"),
+        ("Schedule", _program_schedule(update)),
+        ("Generated", _format_datetime(update.updated_at or update.created_at)),
+    ]
+    table = Table(
+        [
+            [
+                Paragraph(escape(label), styles["coverFactLabel"]),
+                Paragraph(escape(value), styles["coverFactValue"]),
+            ]
+            for label, value in rows
+        ],
+        colWidths=[58 * mm, 112 * mm],
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                ("BOX", (0, 0), (-1, -1), 1, PCM_BORDER),
+                ("INNERGRID", (0, 0), (-1, -1), 0.8, PCM_BORDER),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F7FAFD")),
+                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+            ]
+        )
+    )
+    return table
+
+
+def _build_cover_snapshot_table(items: list[dict], styles):
+    return _build_metric_grid(items, styles, columns=2)
+
+
+def _build_cover_summary_panel(update: ProgramUpdate, styles):
+    metrics = _collect_report_metrics(update)
+    summary_parts = [f"<b>Calculated insight:</b> {escape(_build_report_insight(metrics))}"]
+    if update.summary:
+        summary_parts.append(_safe_text(update.summary))
+    content = Table(
+        [[
+            Paragraph(
+                "<br/><br/>".join(summary_parts),
+                styles["callout"],
+            )
+        ]],
+        colWidths=[CONTENT_WIDTH - (4 * mm)],
+    )
+    content.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EFF4FF")),
+                ("BOX", (0, 0), (-1, -1), 1, PCM_BORDER),
+                ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 12),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+            ]
+        )
+    )
+    return content
+
+
+def _build_summary_callout(update: ProgramUpdate, styles):
+    metrics = _collect_report_metrics(update)
+    content_parts = [f"<b>Calculated insight:</b> {escape(_build_report_insight(metrics))}"]
+    if update.summary:
+        content_parts.append(_safe_text(update.summary))
+    else:
+        content_parts.append("No additional narrative summary was provided.")
+    card = Table([[Paragraph("<br/><br/>".join(content_parts), styles["callout"])]], colWidths=[CONTENT_WIDTH - (4 * mm)])
+    card.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EEF5FF")),
+                ("BOX", (0, 0), (-1, -1), 1, PCM_BORDER),
+                ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 12),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+            ]
+        )
+    )
+    return card
+
+
+def _build_narrative_sections(update: ProgramUpdate, styles):
+    sections = []
+    narrative_rows = [
+        ("Outcomes", update.outcomes, colors.HexColor("#EFFAF5")),
+        ("Challenges", update.challenges, colors.HexColor("#FFF4F4")),
+        ("Next steps", update.next_steps, colors.HexColor("#F4F0FF")),
+    ]
+    for heading, value, background in narrative_rows:
+        if not value:
+            continue
+        card = Table([[Paragraph(_safe_text(value), styles["body"])]], colWidths=[174 * mm])
+        card.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), background),
+                    ("BOX", (0, 0), (-1, -1), 1, PCM_BORDER),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                    ("TOPPADDING", (0, 0), (-1, -1), 12),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+                ]
+            )
+        )
+        sections.extend([Paragraph(heading, styles["section"]), card, Spacer(1, 10)])
+
+    if not sections:
+        sections.append(Paragraph("No additional narrative fields were provided for this update.", styles["bodyMuted"]))
+        sections.append(Spacer(1, 8))
+    return sections
+
+
+def _build_gallery(image_attachments: list[dict], styles):
+    gallery_rows = []
+    row = []
+    for attachment in image_attachments:
+        tile = _build_gallery_tile(attachment, styles)
+        if tile is None:
+            continue
+        row.append(tile)
+        if len(row) == 2:
+            gallery_rows.append(row)
+            row = []
+    if row:
+        if len(row) == 1:
+            row.append(Spacer(1, 1))
+        gallery_rows.append(row)
+
+    if not gallery_rows:
+        return Paragraph("No image attachments were available to render in the gallery.", styles["bodyMuted"])
+
+    gallery = Table(gallery_rows, colWidths=[87 * mm, 87 * mm], hAlign="LEFT")
+    gallery.setStyle(
+        TableStyle(
+            [
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    return gallery
+
+
+def _build_gallery_tile(attachment: dict, styles):
+    image_path = attachment["path"]
+    scaled = _scaled_image(image_path, 80 * mm, 52 * mm)
+    if scaled is None:
+        return None
+    caption = Paragraph(_safe_text(attachment["name"]), styles["galleryCaption"])
+    tile = Table([[scaled], [caption]], colWidths=[84 * mm])
+    tile.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                ("BOX", (0, 0), (-1, -1), 1, PCM_BORDER),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+    return tile
+
+
+def _build_document_table(document_attachments: list[dict], styles):
+    rows = []
+    for attachment in document_attachments:
+        rows.append(
+            [
+                Paragraph(_safe_text(attachment["name"]), styles["docName"]),
+                Paragraph(
+                    _safe_text(
+                        " | ".join(
+                            part
+                            for part in [
+                                attachment.get("content_type") or "Document",
+                                _format_file_size(attachment.get("size_bytes")),
+                            ]
+                            if part
+                        )
+                    ),
+                    styles["docMeta"],
+                ),
+            ]
+        )
+    table = Table(rows, colWidths=[120 * mm, 54 * mm])
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                ("BOX", (0, 0), (-1, -1), 1, PCM_BORDER),
+                ("INNERGRID", (0, 0), (-1, -1), 0.8, PCM_BORDER),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+    return table
+
+
+def _decorate_page(canvas, doc, update: ProgramUpdate):
+    fonts = _ensure_pdf_fonts()
+    canvas.saveState()
+    page_width, page_height = A4
+    canvas.setFillColor(PCM_BLUE)
+    canvas.rect(0, page_height - 24 * mm, page_width, 24 * mm, stroke=0, fill=1)
+    canvas.setFillColor(PCM_VIOLET)
+    canvas.rect(page_width - 58 * mm, page_height - 24 * mm, 58 * mm, 24 * mm, stroke=0, fill=1)
+    canvas.setFillColor(PCM_RED)
+    canvas.rect(page_width - 24 * mm, page_height - 24 * mm, 24 * mm, 24 * mm, stroke=0, fill=1)
+
+    logo_path = _logo_path()
+    if logo_path:
+        canvas.drawImage(str(logo_path), 16 * mm, page_height - 18 * mm, width=12 * mm, height=12 * mm, mask="auto", preserveAspectRatio=True)
+        header_x = 31 * mm
+    else:
+        header_x = 16 * mm
+
+    canvas.setFillColor(colors.white)
+    canvas.setFont(fonts["bold"], 11)
+    canvas.drawString(header_x, page_height - 11 * mm, "Public Campus Ministries")
+    canvas.setFont(fonts["regular"], 8.5)
+    canvas.drawString(header_x, page_height - 15.5 * mm, "Impact reporting pack")
+
+    canvas.setStrokeColor(PCM_BORDER)
+    canvas.line(doc.leftMargin, 14 * mm, page_width - doc.rightMargin, 14 * mm)
+    canvas.setFillColor(PCM_SLATE)
+    canvas.setFont(fonts["regular"], 8)
+    canvas.drawString(
+        doc.leftMargin,
+        9.5 * mm,
+        _truncate_canvas_text(
+            canvas,
+            _report_title(update),
+            page_width - doc.leftMargin - doc.rightMargin - (24 * mm),
+            fonts["regular"],
+            8,
+        ),
+    )
+    canvas.drawRightString(page_width - doc.rightMargin, 9.5 * mm, f"Page {doc.page}")
+    canvas.restoreState()
+
+
+def _decorate_cover_page(canvas, doc, update: ProgramUpdate):
+    fonts = _ensure_pdf_fonts()
+    canvas.saveState()
+    page_width, page_height = A4
+    canvas.setFillColor(colors.HexColor("#F7FAFF"))
+    canvas.rect(0, 0, page_width, page_height, stroke=0, fill=1)
+    canvas.setFillColor(PCM_BLUE)
+    canvas.rect(0, page_height - 38 * mm, page_width, 38 * mm, stroke=0, fill=1)
+    canvas.setFillColor(PCM_VIOLET)
+    canvas.rect(page_width - 72 * mm, page_height - 38 * mm, 72 * mm, 38 * mm, stroke=0, fill=1)
+    canvas.setFillColor(PCM_RED)
+    canvas.rect(0, 0, page_width, 12 * mm, stroke=0, fill=1)
+
+    canvas.setStrokeColor(colors.HexColor("#E4EBF7"))
+    canvas.line(doc.leftMargin, 24 * mm, page_width - doc.rightMargin, 24 * mm)
+    canvas.setFillColor(PCM_SLATE)
+    canvas.setFont(fonts["regular"], 8.5)
+    canvas.drawString(doc.leftMargin, 17 * mm, "Public Campus Ministries impact reporting pack")
+    canvas.drawRightString(
+        page_width - doc.rightMargin,
+        17 * mm,
+        _truncate_canvas_text(
+            canvas,
+            update.reporting_period or "Reporting period not set",
+            56 * mm,
+            fonts["regular"],
+            8.5,
+        ),
+    )
+    canvas.restoreState()
+
+
+def _resolve_attachments(update: ProgramUpdate):
+    parsed = []
+    if update.attachments_json:
+        try:
+            loaded = json.loads(update.attachments_json)
+            if isinstance(loaded, list):
+                parsed = loaded
+        except json.JSONDecodeError:
+            parsed = []
+
+    image_rows = []
+    document_rows = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        stored_name = item.get("stored_name") or item.get("path")
+        if not stored_name:
+            continue
+        file_path = Path(settings.upload_dir) / stored_name
+        if not file_path.exists():
+            continue
+        row = {
+            "name": item.get("name") or stored_name,
+            "path": file_path,
+            "content_type": item.get("content_type"),
+            "size_bytes": item.get("size_bytes"),
+        }
+        if _is_image_attachment(row["name"], row["content_type"]):
+            image_rows.append(row)
+        else:
+            document_rows.append(row)
+    return image_rows, document_rows
+
+
+def _logo_path() -> Path | None:
+    for candidate in LOGO_PATHS:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _ensure_pdf_fonts() -> dict[str, str]:
+    global PDF_FONT_REGISTRATION_ATTEMPTED
+    if PDF_FONT_REGISTRATION_ATTEMPTED:
+        return PDF_FONT_NAMES
+
+    resolved_paths = {key: _first_existing_path(candidates) for key, candidates in FONT_CANDIDATES.items()}
+    if not all(resolved_paths.values()):
+        PDF_FONT_REGISTRATION_ATTEMPTED = True
+        return PDF_FONT_NAMES
+
+    registered_names = set(pdfmetrics.getRegisteredFontNames())
+    font_map = {
+        "regular": ("Poppins", resolved_paths["regular"]),
+        "semibold": ("Poppins-SemiBold", resolved_paths["semibold"]),
+        "bold": ("Poppins-Bold", resolved_paths["bold"]),
+    }
+
+    try:
+        for _, (font_name, font_path) in font_map.items():
+            if font_name not in registered_names:
+                pdfmetrics.registerFont(TTFont(font_name, str(font_path)))
+        pdfmetrics.registerFontFamily("Poppins", normal="Poppins", bold="Poppins-Bold")
+        PDF_FONT_NAMES.update({key: value[0] for key, value in font_map.items()})
+    except Exception:
+        pass
+
+    PDF_FONT_REGISTRATION_ATTEMPTED = True
+    return PDF_FONT_NAMES
+
+
+def _first_existing_path(candidates: tuple[Path, ...]) -> Path | None:
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _collect_report_metrics(update: ProgramUpdate) -> dict:
+    expected = max(int(update.program.target_beneficiaries or 0), 0) if update.program else 0
+    actual = max(int(update.beneficiaries_reached or 0), 0)
+    volunteers = max(int(update.volunteers_involved or 0), 0)
+    funds_used = update.funds_used
+    variance = actual - expected if expected else None
+    achievement_rate = ((actual / expected) * 100) if expected else None
+    attendees_per_volunteer = (actual / volunteers) if volunteers else None
+    return {
+        "expected": expected,
+        "actual": actual,
+        "volunteers": volunteers,
+        "funds_used": funds_used,
+        "variance": variance,
+        "achievement_rate": achievement_rate,
+        "attendees_per_volunteer": attendees_per_volunteer,
+    }
+
+
+def _build_cover_metric_items(metrics: dict) -> list[dict]:
+    items = [
+        {
+            "label": "Expected reach",
+            "value": _format_number(metrics["expected"]) if metrics["expected"] else "Not set",
+            "helper": "Planned from the linked ministry program.",
+            "background": colors.HexColor("#EDF4FF"),
+        },
+        {
+            "label": "Actual reach",
+            "value": _format_number(metrics["actual"]),
+            "helper": "Reported attendance or participation.",
+            "background": colors.HexColor("#FFF1F2"),
+        },
+        {
+            "label": "Volunteers",
+            "value": _format_number(metrics["volunteers"]),
+            "helper": _volunteer_helper_text(metrics),
+            "background": colors.HexColor("#F3EEFF"),
+        },
+    ]
+
+    if metrics["achievement_rate"] is not None:
+        items.append(
+            {
+                "label": "Achievement",
+                "value": _format_percent(metrics["achievement_rate"]),
+                "helper": _variance_helper_text(metrics),
+                "background": colors.HexColor("#EFFAF5"),
+            }
+        )
+    elif metrics["attendees_per_volunteer"] is not None:
+        items.append(
+            {
+                "label": "Volunteer coverage",
+                "value": _format_coverage(metrics["attendees_per_volunteer"]),
+                "helper": "Volunteers relative to reported turnout.",
+                "background": colors.HexColor("#EFFAF5"),
+            }
+        )
+    else:
+        items.append(
+            {
+                "label": "Funds used",
+                "value": _format_currency(metrics["funds_used"]) if metrics["funds_used"] is not None else "Not reported",
+                "helper": "Reported spend for this update.",
+                "background": colors.HexColor("#FFF7E8"),
+            }
+        )
+    return items
+
+
+def _build_detailed_metric_items(metrics: dict) -> list[dict]:
+    items = [
+        {
+            "label": "Expected",
+            "value": _format_number(metrics["expected"]) if metrics["expected"] else "Not set",
+            "helper": "Planned attendance or reach.",
+            "background": colors.HexColor("#EDF4FF"),
+        },
+        {
+            "label": "Actual",
+            "value": _format_number(metrics["actual"]),
+            "helper": "Reported turnout captured in the update.",
+            "background": colors.HexColor("#FFF1F2"),
+        },
+        {
+            "label": "Volunteers",
+            "value": _format_number(metrics["volunteers"]),
+            "helper": _volunteer_helper_text(metrics),
+            "background": colors.HexColor("#F3EEFF"),
+        },
+    ]
+
+    if metrics["variance"] is not None:
+        items.append(
+            {
+                "label": "Variance",
+                "value": _format_signed_number(metrics["variance"]),
+                "helper": _variance_helper_text(metrics),
+                "background": colors.HexColor("#EFFAF5"),
+            }
+        )
+        items.append(
+            {
+                "label": "Achievement",
+                "value": _format_percent(metrics["achievement_rate"]),
+                "helper": "Actual reach as a share of plan.",
+                "background": colors.HexColor("#EEF7FF"),
+            }
+        )
+
+    if metrics["attendees_per_volunteer"] is not None:
+        items.append(
+            {
+                "label": "Coverage",
+                "value": _format_coverage(metrics["attendees_per_volunteer"]),
+                "helper": "Average attendees supported by each volunteer.",
+                "background": colors.HexColor("#FFF8E7"),
+            }
+        )
+
+    if metrics["funds_used"] is not None:
+        items.append(
+            {
+                "label": "Funds used",
+                "value": _format_currency(metrics["funds_used"]),
+                "helper": "Reported expenditure for this activity.",
+                "background": colors.HexColor("#FFF7E8"),
+            }
+        )
+
+    return items
+
+
+def _build_metric_grid(items: list[dict], styles, columns: int) -> Table:
+    gap = 4 * mm
+    card_width = (CONTENT_WIDTH - (gap * (columns - 1))) / columns
+    rows = []
+    for start in range(0, len(items), columns):
+        chunk = items[start:start + columns]
+        row = [_build_metric_card(item, styles, card_width) for item in chunk]
+        if len(row) < columns:
+            row.extend([Spacer(1, 1)] * (columns - len(row)))
+        rows.append(row)
+
+    table = Table(rows, colWidths=[card_width] * columns, hAlign="LEFT")
+    table.setStyle(
+        TableStyle(
+            [
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    return table
+
+
+def _build_metric_card(item: dict, styles, width: float) -> Table:
+    helper_text = item.get("helper") or " "
+    card = Table(
+        [
+            [Paragraph(escape(item["label"]), styles["metricLabel"])],
+            [Paragraph(escape(item["value"]), styles["metricValue"])],
+            [Paragraph(_safe_text(helper_text), styles["metricHelper"])],
+        ],
+        colWidths=[width],
+    )
+    card.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), item["background"]),
+                ("BOX", (0, 0), (-1, -1), 1, PCM_BORDER),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    return card
+
+
+def _safe_text(value: str) -> str:
+    return escape(value).replace("\n", "<br/>")
+
+
+def _display_event_name(update: ProgramUpdate) -> str:
+    if update.event_detail:
+        return f"{update.event_name}: {update.event_detail}"
+    return update.event_name or update.title or "Impact update"
+
+
+def _program_schedule(update: ProgramUpdate) -> str:
+    if update.program and update.program.start_date and update.program.end_date:
+        if update.program.start_date == update.program.end_date:
+            return update.program.start_date.strftime("%d %b %Y")
+        return f"{update.program.start_date.strftime('%d %b %Y')} to {update.program.end_date.strftime('%d %b %Y')}"
+    if update.program and update.program.start_date:
+        return update.program.start_date.strftime("%d %b %Y")
+    return "Date not scheduled"
+
+
+def _format_duration(duration_weeks: float | None) -> str:
+    if duration_weeks is None:
+        return "Not recorded"
+    if duration_weeks < 1:
+        days = max(1, round(duration_weeks * 7))
+        return f"{days} day{'s' if days != 1 else ''}"
+    if float(duration_weeks).is_integer():
+        weeks = int(duration_weeks)
+        return f"{weeks} week{'s' if weeks != 1 else ''}"
+    return f"{duration_weeks:.1f} weeks"
+
+
+def _format_number(value: int | float | None) -> str:
+    return f"{int(value or 0):,}"
+
+
+def _format_signed_number(value: int | float | None) -> str:
+    numeric = int(value or 0)
+    if numeric > 0:
+        return f"+{numeric:,}"
+    return f"{numeric:,}"
+
+
+def _format_percent(value: float | None) -> str:
+    if value is None:
+        return "Not set"
+    return f"{value:.0f}%"
+
+
+def _format_coverage(value: float | None) -> str:
+    if value is None:
+        return "Not set"
+    rounded = round(value, 1)
+    if float(rounded).is_integer():
+        return f"1 : {int(rounded)}"
+    return f"1 : {rounded:.1f}"
+
+
+def _format_currency(value: int | float | None) -> str:
+    return f"${value or 0:,.0f}"
+
+
+def _format_datetime(value) -> str:
+    if not value:
+        return "No date"
+    return value.strftime("%d %b %Y, %H:%M")
+
+
+def _format_file_size(size_bytes: int | None) -> str:
+    if not size_bytes:
+        return ""
+    if size_bytes >= 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    if size_bytes >= 1024:
+        return f"{size_bytes / 1024:.0f} KB"
+    return f"{size_bytes} B"
+
+
+def _report_title(update: ProgramUpdate) -> str:
+    university_name = update.university.short_code if update.university and update.university.short_code else (update.university.name if update.university else "network")
+    return f"{university_name}_{update.reporting_period}_{_display_event_name(update)}"
+
+
+def _slugify(value: str) -> str:
+    cleaned = "".join(char.lower() if char.isalnum() else "_" for char in value)
+    while "__" in cleaned:
+        cleaned = cleaned.replace("__", "_")
+    return cleaned.strip("_") or "impact_report"
+
+
+def _scaled_image(path: Path, max_width: float, max_height: float):
+    try:
+        image_reader = ImageReader(str(path))
+        width, height = image_reader.getSize()
+    except Exception:
+        return None
+    if not width or not height:
+        return None
+    scale = min(max_width / width, max_height / height)
+    scale = min(scale, 1)
+    image = Image(str(path), width=width * scale, height=height * scale)
+    image.hAlign = "CENTER"
+    return image
+
+
+def _is_image_attachment(name: str, content_type: str | None) -> bool:
+    if content_type and content_type.startswith("image/"):
+        return True
+    suffix = Path(name).suffix.lower()
+    return suffix in {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
+
+
+def _build_report_insight(metrics: dict, include_funds: bool = True) -> str:
+    parts = []
+    if metrics["achievement_rate"] is not None:
+        variance = metrics["variance"] or 0
+        if variance > 0:
+            parts.append(
+                f"Actual participation exceeded the target by {_format_number(variance)}, delivering {_format_percent(metrics['achievement_rate'])} of plan."
+            )
+        elif variance < 0:
+            parts.append(
+                f"Actual participation reached {_format_percent(metrics['achievement_rate'])} of target, finishing {_format_number(abs(variance))} below plan."
+            )
+        else:
+            parts.append("Actual participation matched the planned target exactly at 100% achievement.")
+    else:
+        parts.append(
+            f"{_format_number(metrics['actual'])} participants were reported for this activity."
+        )
+
+    if metrics["volunteers"]:
+        parts.append(_volunteer_helper_text(metrics))
+
+    if include_funds and metrics["funds_used"] is not None:
+        parts.append(f"Reported spend was {_format_currency(metrics['funds_used'])}.")
+
+    return " ".join(parts)
+
+
+def _volunteer_helper_text(metrics: dict) -> str:
+    if metrics["attendees_per_volunteer"] is None:
+        return "No volunteers were recorded for this update."
+    rounded = round(metrics["attendees_per_volunteer"], 1)
+    if float(rounded).is_integer():
+        ratio_value = str(int(rounded))
+    else:
+        ratio_value = f"{rounded:.1f}"
+    return f"About 1 volunteer supported every {ratio_value} attendees."
+
+
+def _variance_helper_text(metrics: dict) -> str:
+    if metrics["variance"] is None:
+        return "No target was configured for this activity."
+    variance = metrics["variance"]
+    if variance > 0:
+        return f"{_format_number(variance)} above target."
+    if variance < 0:
+        return f"{_format_number(abs(variance))} below target."
+    return "Matched the planned target exactly."
+
+
+def _truncate_canvas_text(canvas, value: str, max_width: float, font_name: str, font_size: float) -> str:
+    if canvas.stringWidth(value, font_name, font_size) <= max_width:
+        return value
+
+    ellipsis = "..."
+    clipped = value
+    while clipped and canvas.stringWidth(f"{clipped}{ellipsis}", font_name, font_size) > max_width:
+        clipped = clipped[:-1]
+    clipped = clipped.rstrip(" _-:,.;/")
+    return f"{clipped}{ellipsis}" if clipped else ellipsis
+
+
+def _wrap_text(value: str, limit: int) -> list[str]:
+    if len(value) <= limit:
+        return [value]
+    words = value.split()
+    lines = []
+    current = ""
+    for word in words:
+        tentative = f"{current} {word}".strip()
+        if len(tentative) <= limit:
+            current = tentative
+            continue
+        if current:
+            lines.append(current)
+        current = word
+    if current:
+        lines.append(current)
+    return lines[:4]

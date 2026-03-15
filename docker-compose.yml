@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: pcm_db
+      POSTGRES_USER: pcm_user
+      POSTGRES_PASSWORD: pcm_pass
+    ports:
+      - "5434:5432"
+    volumes:
+      - pcm_db:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg2://pcm_user:pcm_pass@db:5432/pcm_db
+      SECRET_KEY: change-me
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      REFRESH_TOKEN_EXPIRE_DAYS: 7
+      UPLOAD_DIR: /data/uploads
+      ADMIN_EMAIL: admin@pcm.local
+      ADMIN_PASSWORD: admin123
+      CORS_ORIGINS: http://localhost:5173
+    volumes:
+      - ./backend:/app
+      - pcm_uploads:/data/uploads
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  # frontend:
+  #   build: ./frontend
+  #   environment:
+  #     VITE_API_URL: http://backend:8000
+  #   volumes:
+  #     - ./frontend:/app
+  #   ports:
+  #     - "5173:5173"
+  #   depends_on:
+  #     - backend
+
+volumes:
+  pcm_db:
+  pcm_uploads:

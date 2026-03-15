@@ -1,0 +1,178 @@
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
+
+from ...db.session import get_db
+from ...models import Program, University
+from ...schemas import ProgramCreate, ProgramRead, ProgramUpdatePayload
+from ...services.audit_log import log_action
+from ...services.rbac import get_user_roles
+from ..deps import PROGRAM_ROLES, require_role, resolve_university_scope
+
+router = APIRouter(prefix="/programs", tags=["programs"])
+NETWORK_PROGRAM_LABEL = "All universities and campuses"
+PROGRAM_AUDIENCES = {"Students", "Alumni", "Students and Alumni"}
+ALUMNI_ALLOWED_AUDIENCES = {"alumni", "students and alumni"}
+
+
+def _normalize_audience(value: str | None) -> str:
+    normalized = (value or "Students").strip()
+    if not normalized:
+        return "Students"
+    if normalized not in PROGRAM_AUDIENCES:
+        raise HTTPException(status_code=400, detail="Invalid program audience")
+    return normalized
+
+
+def _audience_supports_alumni(value: str | None) -> bool:
+    return _normalize_audience(value).strip().lower() in ALUMNI_ALLOWED_AUDIENCES
+
+
+def _resolve_program_scope(user, requested_university_id: int | None) -> int | None:
+    if requested_university_id is None:
+        if user.university_id:
+            raise HTTPException(status_code=403, detail="Only global-access users can manage network-wide programs")
+        return None
+    return resolve_university_scope(user, requested_university_id)
+
+
+def _ensure_program_mutation_access(user, program: Program) -> None:
+    if program.university_id is None:
+        if user.university_id:
+            raise HTTPException(status_code=403, detail="Only global-access users can modify network-wide programs")
+        return
+    resolve_university_scope(user, program.university_id)
+
+
+def _enforce_program_role_rules(db: Session, user, audience: str | None) -> None:
+    user_roles = set(get_user_roles(db, user))
+    if "alumni_admin" in user_roles and not _audience_supports_alumni(audience):
+        raise HTTPException(status_code=403, detail="Alumni admins can only manage alumni-focused programs")
+
+
+def _is_reported_completed_program(program: Program) -> bool:
+    if not program.updates:
+        return False
+    completion_date = program.end_date or program.start_date
+    if completion_date is None:
+        return False
+    return completion_date < date.today()
+
+
+def _serialize(program: Program) -> ProgramRead:
+    return ProgramRead(
+        id=program.id,
+        university_id=program.university_id,
+        university_name=program.university.name if program.university else NETWORK_PROGRAM_LABEL,
+        name=program.name,
+        category=program.category,
+        status=program.status,
+        description=program.description,
+        audience=_normalize_audience(program.audience),
+        manager_name=program.manager_name,
+        target_beneficiaries=program.target_beneficiaries,
+        beneficiaries_served=program.beneficiaries_served,
+        annual_budget=program.annual_budget,
+        duration_weeks=program.duration_weeks,
+        level=program.level,
+        start_date=program.start_date,
+        end_date=program.end_date,
+        last_update_at=program.last_update_at,
+        update_count=len(program.updates),
+    )
+
+
+@router.get("", response_model=list[ProgramRead])
+def list_programs(
+    university_id: int | None = None,
+    db: Session = Depends(get_db),
+    user=Depends(require_role(PROGRAM_ROLES)),
+):
+    scoped_university_id = resolve_university_scope(user, university_id)
+    query = db.query(Program).order_by(Program.name.asc())
+    if scoped_university_id:
+        query = query.filter(or_(Program.university_id == scoped_university_id, Program.university_id.is_(None)))
+    return [_serialize(item) for item in query.all()]
+
+
+@router.post("", response_model=ProgramRead)
+def create_program(
+    payload: ProgramCreate,
+    db: Session = Depends(get_db),
+    user=Depends(require_role(PROGRAM_ROLES)),
+):
+    scoped_university_id = _resolve_program_scope(user, payload.university_id)
+    audience = _normalize_audience(payload.audience)
+    _enforce_program_role_rules(db, user, audience)
+    if scoped_university_id is not None:
+        university = db.query(University).filter(University.id == scoped_university_id).first()
+        if not university:
+            raise HTTPException(status_code=404, detail="University not found")
+
+    program = Program(
+        **payload.model_dump(exclude={"university_id", "audience"}),
+        university_id=scoped_university_id,
+        audience=audience,
+    )
+    db.add(program)
+    db.commit()
+    db.refresh(program)
+    log_action(db, user.id, "create", "program", str(program.id), {"university_id": program.university_id})
+    return _serialize(program)
+
+
+@router.patch("/{program_id}", response_model=ProgramRead)
+def update_program(
+    program_id: int,
+    payload: ProgramUpdatePayload,
+    db: Session = Depends(get_db),
+    user=Depends(require_role(PROGRAM_ROLES)),
+):
+    program = db.query(Program).filter(Program.id == program_id).first()
+    if not program:
+        raise HTTPException(status_code=404, detail="Program not found")
+
+    _ensure_program_mutation_access(user, program)
+
+    updates = payload.model_dump(exclude_unset=True)
+    target_audience = _normalize_audience(updates["audience"]) if "audience" in updates else _normalize_audience(program.audience)
+    _enforce_program_role_rules(db, user, target_audience)
+    if "university_id" in updates:
+        updates["university_id"] = _resolve_program_scope(user, updates.get("university_id"))
+        if updates["university_id"] is not None:
+            university = db.query(University).filter(University.id == updates["university_id"]).first()
+            if not university:
+                raise HTTPException(status_code=404, detail="University not found")
+    if "audience" in updates:
+        updates["audience"] = target_audience
+
+    for key, value in updates.items():
+        setattr(program, key, value)
+    db.commit()
+    db.refresh(program)
+    log_action(db, user.id, "update", "program", str(program.id), {"university_id": program.university_id})
+    return _serialize(program)
+
+
+@router.delete("/{program_id}")
+def delete_program(
+    program_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(require_role(PROGRAM_ROLES)),
+):
+    program = db.query(Program).filter(Program.id == program_id).first()
+    if not program:
+        raise HTTPException(status_code=404, detail="Program not found")
+    _ensure_program_mutation_access(user, program)
+    if _is_reported_completed_program(program):
+        raise HTTPException(
+            status_code=409,
+            detail="Programs that have already occurred and been reported on cannot be deleted",
+        )
+
+    db.delete(program)
+    db.commit()
+    log_action(db, user.id, "delete", "program", str(program_id), {"university_id": program.university_id})
+    return {"status": "deleted"}

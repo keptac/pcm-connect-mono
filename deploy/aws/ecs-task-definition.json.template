@@ -1,0 +1,80 @@
+{
+  "family": __TASK_FAMILY__,
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": __CPU__,
+  "memory": __MEMORY__,
+  "executionRoleArn": __EXECUTION_ROLE_ARN__,
+  "taskRoleArn": __TASK_ROLE_ARN__,
+  "containerDefinitions": [
+    {
+      "name": __CONTAINER_NAME__,
+      "image": __IMAGE_URI__,
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": __APP_PORT__,
+          "hostPort": __APP_PORT__,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "APP_NAME",
+          "value": __APP_NAME__
+        },
+        {
+          "name": "DATABASE_URL",
+          "value": __DATABASE_URL__
+        },
+        {
+          "name": "SECRET_KEY",
+          "value": __SECRET_KEY__
+        },
+        {
+          "name": "ACCESS_TOKEN_EXPIRE_MINUTES",
+          "value": __ACCESS_TOKEN_EXPIRE_MINUTES__
+        },
+        {
+          "name": "REFRESH_TOKEN_EXPIRE_DAYS",
+          "value": __REFRESH_TOKEN_EXPIRE_DAYS__
+        },
+        {
+          "name": "UPLOAD_DIR",
+          "value": __UPLOAD_DIR__
+        },
+        {
+          "name": "ALLOWED_UPLOAD_EXTENSIONS",
+          "value": __ALLOWED_UPLOAD_EXTENSIONS__
+        },
+        {
+          "name": "MAX_UPLOAD_MB",
+          "value": __MAX_UPLOAD_MB__
+        },
+        {
+          "name": "ADMIN_EMAIL",
+          "value": __ADMIN_EMAIL__
+        },
+        {
+          "name": "ADMIN_PASSWORD",
+          "value": __ADMIN_PASSWORD__
+        },
+        {
+          "name": "CORS_ORIGINS",
+          "value": __CORS_ORIGINS__
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-create-group": "true",
+          "awslogs-group": __LOG_GROUP__,
+          "awslogs-region": __AWS_REGION__,
+          "awslogs-stream-prefix": __CONTAINER_NAME__
+        }
+      }
+    }
+  ]
+}

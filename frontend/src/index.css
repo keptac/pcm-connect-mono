@@ -1,0 +1,852 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --pcm-blue: #4a9bd6;
+  --pcm-blue-deep: #2f77bd;
+  --pcm-violet: #7157ba;
+  --pcm-magenta: #b73d8c;
+  --pcm-red: #e33a34;
+  --pcm-ink: #12243f;
+  --pcm-surface: #f5f7fc;
+  --pcm-border: rgba(44, 72, 118, 0.12);
+  color: #0f172a;
+  font-family: "Avenir Next", "Segoe UI Variable", "Helvetica Neue", sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(74, 155, 214, 0.15), transparent 34%),
+    radial-gradient(circle at top right, rgba(113, 87, 186, 0.14), transparent 30%),
+    linear-gradient(180deg, #fbfcff 0%, #f3f6fb 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgba(74, 155, 214, 0.12), transparent 35%),
+    radial-gradient(circle at 82% 10%, rgba(113, 87, 186, 0.11), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(227, 58, 52, 0.08), transparent 24%),
+    linear-gradient(180deg, #fbfcff 0%, #f3f6fb 100%);
+  color: #0f172a;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+  letter-spacing: -0.02em;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.eyebrow {
+  @apply text-[11px] font-semibold uppercase tracking-[0.34em] text-slate-500;
+}
+
+.display-title {
+  @apply text-4xl font-semibold text-slate-950 sm:text-5xl;
+  font-family: "Avenir Next", "Segoe UI Variable", "Helvetica Neue", sans-serif;
+  letter-spacing: -0.03em;
+}
+
+.app-shell {
+  @apply min-h-screen lg:grid lg:grid-cols-[310px_1fr];
+}
+
+.sidebar-shell {
+  @apply flex flex-col justify-between gap-8 border-r px-6 py-8 backdrop-blur xl:px-8;
+  border-color: var(--pcm-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(246, 248, 253, 0.88)),
+    linear-gradient(180deg, rgba(74, 155, 214, 0.04), rgba(113, 87, 186, 0.03));
+}
+
+.sidebar-brand-title,
+.sidebar-brand-subtitle {
+  font-family: "Avenir Next", "Segoe UI Variable", "Helvetica Neue", sans-serif;
+}
+
+.sidebar-brand-title {
+  letter-spacing: -0.02em;
+}
+
+.content-shell {
+  @apply min-h-screen px-4 py-5 sm:px-6 lg:px-8 lg:py-7;
+}
+
+@media (min-width: 1024px) {
+  .app-shell {
+    height: 100vh;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  .sidebar-shell,
+  .content-shell {
+    min-height: 0;
+    max-height: 100vh;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .sidebar-shell {
+    overflow-y: auto;
+  }
+
+  .content-shell {
+    overflow-y: auto;
+  }
+}
+
+.topbar-shell {
+  @apply flex flex-col gap-4 rounded-[14px] border px-5 py-5 shadow-[0_16px_40px_rgba(18,36,63,0.08)] backdrop-blur lg:flex-row lg:items-end lg:justify-between lg:px-7;
+  border-color: var(--pcm-border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(247, 249, 253, 0.84));
+}
+
+.topbar-shell .eyebrow,
+.topbar-shell h2 {
+  font-family: "Avenir Next", "Segoe UI Variable", "Helvetica Neue", sans-serif;
+}
+
+.topbar-shell h2 {
+  letter-spacing: -0.03em;
+}
+
+.page-shell {
+  @apply mt-6;
+  animation: page-reveal 0.45s ease-out;
+}
+
+.app-footer {
+  @apply mt-8 border-t pt-4 text-center text-sm text-slate-500;
+  border-color: rgba(44, 72, 118, 0.1);
+}
+
+.nav-tile {
+  @apply flex flex-col gap-1 rounded-[12px] px-4 py-4 transition duration-200;
+}
+
+.nav-tile-title {
+  @apply flex items-center gap-2;
+}
+
+.sidebar-nav-label {
+  font-size: 0.98rem;
+  line-height: 1.35rem;
+}
+
+.sidebar-nav-description {
+  font-size: 0.8rem;
+  line-height: 1.15rem;
+}
+
+.nav-unread-badge {
+  @apply inline-flex min-w-[1.35rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold text-white;
+  background: linear-gradient(135deg, var(--pcm-violet), var(--pcm-magenta));
+}
+
+.nav-tile-idle {
+  @apply border border-transparent bg-transparent;
+}
+
+.nav-tile-idle:hover {
+  border-color: rgba(74, 155, 214, 0.18);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 12px 28px rgba(18, 36, 63, 0.06);
+}
+
+.nav-tile-active {
+  @apply border shadow-[0_16px_38px_rgba(18,36,63,0.1)];
+  border-color: rgba(74, 155, 214, 0.18);
+  background: linear-gradient(135deg, rgba(74, 155, 214, 0.14), rgba(113, 87, 186, 0.12));
+}
+
+.panel {
+  @apply rounded-[14px] border p-6 shadow-[0_18px_44px_rgba(18,36,63,0.07)] backdrop-blur sm:p-7;
+  border-color: var(--pcm-border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 254, 0.9));
+}
+
+.metric-card {
+  @apply rounded-[12px] border p-5 shadow-[0_14px_34px_rgba(18,36,63,0.07)];
+}
+
+.metric-forest {
+  border-color: rgba(74, 155, 214, 0.22);
+  background: linear-gradient(180deg, rgba(236, 246, 255, 0.96), rgba(217, 235, 252, 0.96));
+}
+
+.metric-gold {
+  border-color: rgba(113, 87, 186, 0.22);
+  background: linear-gradient(180deg, rgba(244, 239, 255, 0.96), rgba(229, 220, 255, 0.96));
+}
+
+.metric-coral {
+  border-color: rgba(183, 61, 140, 0.18);
+  background: linear-gradient(180deg, rgba(255, 242, 248, 0.96), rgba(252, 223, 235, 0.96));
+}
+
+.metric-ink {
+  @apply text-white;
+  border-color: rgba(18, 36, 63, 0.85);
+  background: linear-gradient(180deg, var(--pcm-ink), #243859);
+}
+
+.metric-label {
+  @apply text-xs font-semibold uppercase tracking-[0.24em] text-slate-500;
+}
+
+.metric-value {
+  @apply mt-3 text-3xl font-semibold leading-none text-slate-950;
+}
+
+.metric-ink .metric-label,
+.metric-ink .metric-value,
+.metric-ink .metric-helper {
+  color: white;
+}
+
+.metric-helper {
+  @apply mt-3 text-sm text-slate-600;
+}
+
+.status-badge {
+  @apply inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em];
+}
+
+.status-neutral {
+  @apply bg-slate-100 text-slate-700;
+}
+
+.status-success {
+  @apply bg-emerald-100 text-emerald-800;
+}
+
+.status-warning {
+  @apply bg-amber-100 text-amber-800;
+}
+
+.status-danger {
+  @apply bg-rose-100 text-rose-800;
+}
+
+.status-info {
+  @apply bg-cyan-100 text-cyan-800;
+}
+
+.primary-button {
+  @apply inline-flex items-center rounded-[12px] px-5 py-3 font-semibold text-white transition hover:translate-y-[-1px];
+  background: linear-gradient(135deg, var(--pcm-blue-deep), var(--pcm-violet) 62%, var(--pcm-magenta));
+  box-shadow: 0 16px 34px rgba(66, 78, 164, 0.26);
+}
+
+.secondary-button {
+  @apply inline-flex items-center rounded-[12px] border bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-[0_10px_22px_rgba(18,36,63,0.05)] transition;
+  border-color: rgba(44, 72, 118, 0.12);
+}
+
+.secondary-button:hover {
+  border-color: rgba(74, 155, 214, 0.22);
+  background: rgba(246, 249, 255, 0.92);
+}
+
+.field-shell {
+  @apply flex flex-col gap-2;
+}
+
+.field-label {
+  @apply text-xs font-semibold uppercase tracking-[0.18em] text-slate-500;
+}
+
+.field-input {
+  @apply w-full rounded-[14px] border bg-white/90 px-4 py-3 text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] transition placeholder:text-slate-400 focus:outline-none focus:ring-4;
+  border-color: rgba(44, 72, 118, 0.12);
+}
+
+.field-input:focus {
+  border-color: rgba(74, 155, 214, 0.45);
+  --tw-ring-color: rgba(74, 155, 214, 0.14);
+}
+
+textarea.field-input {
+  @apply resize-y;
+}
+
+.field-checkbox {
+  @apply flex-row items-center justify-between rounded-[14px] border border-slate-200/80 bg-white/80 px-4 py-3;
+}
+
+.field-checkbox input {
+  @apply h-5 w-5 rounded border-slate-300 focus:ring-0;
+  color: var(--pcm-blue-deep);
+}
+
+.table-shell {
+  @apply overflow-x-auto rounded-[12px] border border-slate-200/80 bg-white/85 shadow-[0_18px_45px_rgba(15,23,42,0.06)];
+}
+
+.data-table {
+  @apply min-w-full border-collapse;
+}
+
+.data-table thead th {
+  @apply border-b border-slate-200 bg-slate-50/80 px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500;
+}
+
+.data-table tbody td {
+  @apply border-b border-slate-100 px-4 py-4 align-top text-sm text-slate-700;
+}
+
+.data-table tbody tr:hover td {
+  background: rgba(243, 247, 255, 0.7);
+}
+
+.data-table tbody tr:last-child td {
+  @apply border-b-0;
+}
+
+.table-primary {
+  @apply font-medium text-slate-900;
+}
+
+.table-secondary {
+  @apply mt-1 text-xs text-slate-500;
+}
+
+.table-actions {
+  @apply flex flex-wrap gap-2;
+}
+
+.table-icon-button {
+  @apply inline-flex h-9 w-9 items-center justify-center rounded-[10px] border transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+.table-icon-button svg {
+  @apply h-4 w-4;
+}
+
+.table-icon-button-edit {
+  @apply border-sky-200 bg-sky-50/80 text-sky-700 hover:bg-sky-100;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.table-icon-button-edit:focus {
+  @apply ring-sky-300;
+}
+
+.table-icon-button-download {
+  @apply border-indigo-200 bg-indigo-50/85 text-indigo-700 hover:bg-indigo-100;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.table-icon-button-download:focus {
+  @apply ring-indigo-300;
+}
+
+.table-icon-button-delete {
+  @apply border-rose-200 bg-rose-50/85 text-rose-700 hover:bg-rose-100;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.table-icon-button-delete:focus {
+  @apply ring-rose-300;
+}
+
+.table-pagination {
+  @apply mt-4 flex flex-col gap-3 rounded-[12px] border border-slate-200/70 bg-white/70 px-4 py-3;
+}
+
+.table-pagination-summary {
+  @apply text-sm text-slate-600;
+}
+
+.table-pagination-controls {
+  @apply flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between;
+}
+
+.table-pagination-tools {
+  @apply flex flex-col gap-3 sm:flex-row sm:items-center;
+}
+
+.table-pagination-size {
+  @apply flex items-center gap-3 text-sm font-medium text-slate-600;
+}
+
+.table-pagination-select {
+  @apply min-w-[88px] px-3 py-2 text-sm;
+}
+
+.table-pagination-buttons {
+  @apply flex flex-wrap items-center gap-3;
+}
+
+.table-pagination-button[disabled] {
+  @apply cursor-not-allowed opacity-50;
+}
+
+.table-pagination-page {
+  @apply text-sm font-medium text-slate-600;
+}
+
+.calendar-grid {
+  @apply grid gap-px overflow-hidden rounded-[12px] border border-slate-200/80 bg-slate-200/70;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.calendar-weekday {
+  @apply bg-slate-950 px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-[0.24em] text-white/75;
+}
+
+.calendar-cell {
+  @apply min-h-[168px] bg-white/90 px-3 py-3 align-top;
+}
+
+.calendar-cell-muted {
+  @apply bg-slate-50/90;
+}
+
+.calendar-day-number {
+  @apply text-sm font-semibold text-slate-900;
+}
+
+.calendar-day-count {
+  @apply inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full px-2 text-xs font-semibold;
+  background: rgba(74, 155, 214, 0.14);
+  color: var(--pcm-blue-deep);
+}
+
+.calendar-event-chip {
+  @apply flex w-full flex-col rounded-[12px] border px-3 py-2 text-left transition;
+  border-color: rgba(74, 155, 214, 0.16);
+  background: linear-gradient(180deg, rgba(240, 246, 255, 0.96), rgba(238, 239, 255, 0.9));
+}
+
+.calendar-event-chip:hover {
+  border-color: rgba(74, 155, 214, 0.28);
+  background: linear-gradient(180deg, rgba(232, 242, 255, 0.98), rgba(232, 235, 255, 0.96));
+}
+
+.calendar-event-time {
+  @apply text-[11px] font-semibold uppercase tracking-[0.16em];
+  color: var(--pcm-blue-deep);
+}
+
+.calendar-event-title {
+  @apply mt-1 text-sm font-medium text-slate-900;
+}
+
+.calendar-event-campus {
+  @apply mt-1 text-[11px] font-medium leading-4 text-slate-500;
+}
+
+.calendar-more {
+  @apply text-xs font-medium text-slate-500;
+}
+
+.finance-chart-legend {
+  @apply flex flex-wrap items-center gap-4 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500;
+}
+
+.finance-chart-legend-item {
+  @apply inline-flex items-center gap-2;
+}
+
+.finance-chart-legend-swatch {
+  @apply inline-block h-2.5 w-2.5 rounded-full;
+}
+
+.finance-chart-legend-swatch-inflow {
+  background: linear-gradient(180deg, #2f77bd, #4a9bd6);
+}
+
+.finance-chart-legend-swatch-outflow {
+  background: linear-gradient(180deg, #b73d8c, #e33a34);
+}
+
+.finance-chart-scroll {
+  @apply overflow-x-auto overflow-y-hidden pb-2;
+}
+
+.finance-chart {
+  @apply flex items-end gap-5 rounded-[12px] border border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.92),rgba(255,255,255,0.96))] px-4 py-5;
+}
+
+.finance-chart-wide {
+  min-height: 24rem;
+}
+
+.finance-chart-compact {
+  min-height: 24rem;
+}
+
+.finance-chart-group {
+  @apply flex min-w-[6rem] flex-col items-center justify-end gap-3;
+}
+
+.finance-chart-group-compact {
+  @apply min-w-[4.75rem];
+}
+
+.finance-chart-columns {
+  @apply flex h-[18rem] items-end gap-3;
+}
+
+.finance-chart-column {
+  @apply flex h-full w-8 flex-col items-center justify-end gap-2;
+}
+
+.finance-chart-value {
+  @apply max-w-[4.5rem] text-center text-[10px] font-semibold leading-4 text-slate-500;
+}
+
+.finance-chart-track-vertical {
+  @apply flex min-h-0 flex-1 w-full items-end overflow-hidden rounded-t-[10px] rounded-b-[6px] border border-slate-200/80 bg-slate-100/90;
+}
+
+.finance-chart-bar {
+  @apply w-full rounded-t-[10px];
+}
+
+.finance-chart-bar-inflow {
+  background: linear-gradient(180deg, #4a9bd6, #2f77bd);
+}
+
+.finance-chart-bar-outflow {
+  background: linear-gradient(180deg, #e33a34, #b73d8c);
+}
+
+.finance-chart-labels {
+  @apply space-y-1 text-center;
+}
+
+.finance-chart-label {
+  @apply text-xs font-semibold leading-5 text-slate-900;
+}
+
+.finance-chart-caption {
+  @apply text-[10px] leading-4 text-slate-500;
+}
+
+.login-shell {
+  @apply relative flex min-h-screen flex-col overflow-hidden px-4 py-5 sm:px-8 sm:py-6;
+  font-family: "Poppins", "Avenir Next", "Segoe UI Variable", "Helvetica Neue", sans-serif;
+}
+
+.login-shell h1,
+.login-shell h2,
+.login-shell h3,
+.login-shell h4 {
+  font-family: "Poppins", "Avenir Next", "Segoe UI Variable", "Helvetica Neue", sans-serif;
+}
+
+.login-backdrop {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  transform: scale(1.04);
+}
+
+.login-overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(125deg, rgba(18, 36, 63, 0.82) 0%, rgba(47, 119, 189, 0.7) 30%, rgba(113, 87, 186, 0.68) 66%, rgba(227, 58, 52, 0.5) 100%),
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.14), transparent 28%),
+    radial-gradient(circle at 80% 15%, rgba(255, 255, 255, 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.28) 0%, rgba(15, 23, 42, 0.55) 100%);
+}
+
+.login-grid {
+  @apply relative mx-auto grid w-full max-w-7xl flex-1 items-center gap-8 py-2 lg:grid-cols-[1.15fr_0.8fr];
+}
+
+.login-footer {
+  @apply relative mx-auto mt-3 max-w-7xl pb-1 text-center text-sm text-white/80;
+}
+
+.login-story {
+  @apply rounded-[12px] border border-white/20 p-8 text-white shadow-[0_30px_90px_rgba(15,23,42,0.22)] backdrop-blur-[10px] sm:p-10 lg:p-12;
+  background: linear-gradient(180deg, rgba(18, 36, 63, 0.28), rgba(62, 68, 141, 0.14));
+}
+
+.login-brand {
+  @apply flex items-center gap-4;
+}
+
+.login-brand-mark {
+  @apply grid h-20 w-20 place-items-center rounded-[12px];
+}
+
+.login-brand-logo {
+  @apply h-full w-full object-contain p-2.5;
+}
+
+.login-brand-title {
+  @apply text-2xl font-semibold text-white;
+}
+
+.login-story-copy {
+  padding-top: 1.75rem;
+}
+
+.login-kicker {
+  @apply text-sm font-semibold uppercase tracking-[0.28em] text-white/70;
+}
+
+.login-title {
+  @apply max-w-4xl text-4xl font-semibold leading-tight text-white sm:text-6xl;
+}
+
+.login-copy {
+  @apply max-w-2xl text-base leading-8 text-white/80 sm:text-lg;
+}
+
+.login-stat {
+  @apply rounded-[12px] border border-white/20 bg-white/10 px-5 py-5 text-white shadow-[0_14px_34px_rgba(15,23,42,0.16)] backdrop-blur;
+}
+
+.login-stat-label {
+  @apply text-xs font-semibold uppercase tracking-[0.24em] text-white/60;
+}
+
+.login-card {
+  @apply rounded-[12px] border border-white/70 bg-white/90 p-8 shadow-[0_30px_90px_rgba(15,23,42,0.22)] backdrop-blur sm:p-10;
+}
+
+.login-card-head {
+  @apply flex items-center gap-4;
+}
+
+.login-card-logo {
+  @apply h-16 w-16 rounded-[14px] object-contain p-2;
+}
+
+.login-card-note {
+  @apply mt-8 rounded-[12px] border px-5 py-4 text-sm;
+  border-color: rgba(113, 87, 186, 0.18);
+  background: linear-gradient(180deg, rgba(244, 239, 255, 0.95), rgba(249, 244, 255, 0.9));
+}
+
+.broadcast-card {
+  @apply rounded-[12px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] p-5 shadow-[0_18px_40px_rgba(15,23,42,0.05)];
+}
+
+.broadcast-card-meta {
+  @apply grid min-w-[220px] gap-3 rounded-[12px] border border-slate-200/70 bg-slate-50/90 px-4 py-4 text-sm text-slate-600;
+}
+
+.broadcast-card-meta p {
+  @apply m-0 grid gap-1;
+}
+
+.broadcast-card-meta span {
+  @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400;
+}
+
+.broadcast-chip-row {
+  @apply mt-4 flex flex-wrap gap-2;
+}
+
+.broadcast-chip {
+  @apply inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium;
+  border-color: rgba(113, 87, 186, 0.16);
+  background: rgba(113, 87, 186, 0.08);
+  color: #5a4299;
+}
+
+.messages-shell {
+  @apply grid gap-5 xl:grid-cols-[304px_1fr];
+}
+
+.messages-sidebar {
+  @apply flex h-[calc(100vh-16rem)] flex-col overflow-hidden;
+}
+
+.messages-sidebar-content {
+  @apply flex h-full min-h-0 flex-col gap-3;
+}
+
+.messages-panel {
+  @apply flex h-[calc(100vh-16rem)] flex-col gap-5;
+}
+
+.messages-section {
+  @apply space-y-3;
+}
+
+.messages-section-fill {
+  @apply flex min-h-0 flex-1 flex-col;
+}
+
+.messages-section-head {
+  @apply flex items-center justify-between gap-3 text-sm font-semibold text-slate-800;
+  font-family: "Avenir Next", "Segoe UI Variable", "Helvetica Neue", sans-serif;
+}
+
+.messages-sidebar h3,
+.messages-header h3 {
+  font-family: "Avenir Next", "Segoe UI Variable", "Helvetica Neue", sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.messages-list {
+  @apply grid min-h-0 flex-1 gap-2 overflow-y-auto pr-1;
+}
+
+.messages-list-label {
+  @apply pt-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400;
+}
+
+.conversation-card,
+.contact-card {
+  @apply flex items-center gap-2.5 rounded-[12px] border bg-white/90 px-3 py-2.5 text-left shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition;
+  border-color: rgba(44, 72, 118, 0.12);
+}
+
+.conversation-card:hover,
+.contact-card:hover {
+  border-color: rgba(74, 155, 214, 0.22);
+  background: rgba(243, 247, 255, 0.92);
+}
+
+.conversation-card-active {
+  border-color: rgba(74, 155, 214, 0.2);
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.96), rgba(237, 239, 255, 0.92));
+}
+
+.conversation-avatar {
+  @apply grid h-10 w-10 shrink-0 place-items-center rounded-[10px] text-xs font-semibold uppercase tracking-[0.08em] text-white;
+  background: linear-gradient(135deg, var(--pcm-blue-deep), var(--pcm-violet) 62%, var(--pcm-red));
+}
+
+.conversation-avatar-lg {
+  @apply h-12 w-12 rounded-[12px];
+}
+
+.conversation-unread {
+  @apply inline-flex min-w-[1.5rem] items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-semibold text-white;
+  background: linear-gradient(135deg, var(--pcm-violet), var(--pcm-magenta));
+}
+
+.messages-header {
+  @apply flex flex-col gap-3 rounded-[12px] border border-slate-200/70 bg-slate-50/85 px-4 py-4 lg:flex-row lg:items-center lg:justify-between;
+}
+
+.messages-header-badge .status-badge {
+  @apply px-2.5 py-1 text-[10px];
+}
+
+.messages-thread {
+  @apply flex-1 space-y-4 overflow-y-auto rounded-[12px] border border-slate-200/70 bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,0.98))] px-4 py-5;
+}
+
+.message-row {
+  @apply flex;
+}
+
+.message-row-own {
+  @apply justify-end;
+}
+
+.message-bubble {
+  @apply max-w-[78%] rounded-[12px] px-4 py-3 shadow-[0_14px_32px_rgba(15,23,42,0.06)];
+}
+
+.message-bubble-peer {
+  @apply rounded-bl-[10px] border border-slate-200/80 bg-white text-slate-800;
+}
+
+.message-bubble-own {
+  @apply rounded-br-[10px] text-white;
+  background: linear-gradient(135deg, var(--pcm-blue-deep), var(--pcm-violet));
+}
+
+.message-meta {
+  @apply mt-3 flex flex-wrap gap-3 text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400;
+}
+
+.message-bubble-own .message-meta {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.messages-composer {
+  @apply flex flex-col gap-3 rounded-[12px] border border-slate-200/70 bg-white/90 px-4 py-4;
+}
+
+.messages-composer .field-input {
+  min-height: 4.75rem;
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
+}
+
+.messages-lock-state,
+.messages-empty {
+  @apply flex flex-1 flex-col items-start justify-center gap-6 rounded-[12px] border border-dashed border-slate-300/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(248,250,252,0.96))] px-6 py-10;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background:
+    linear-gradient(180deg, rgba(18, 36, 63, 0.48), rgba(18, 36, 63, 0.58)),
+    radial-gradient(circle at top, rgba(74, 155, 214, 0.18), transparent 34%);
+  backdrop-filter: blur(8px);
+}
+
+.modal-shell {
+  width: min(960px, 100%);
+  max-height: calc(100vh - 3rem);
+  overflow-y: auto;
+  border: 1px solid var(--pcm-border);
+  border-radius: 14px;
+  padding: 1.5rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(248, 250, 254, 0.95));
+  box-shadow: 0 28px 80px rgba(18, 36, 63, 0.22);
+}
+
+.modal-shell-page {
+  width: min(1400px, 100%);
+  max-height: calc(100vh - 2rem);
+}
+
+code {
+  @apply rounded bg-slate-900 px-1.5 py-0.5 text-[0.9em] text-white;
+}
+
+@keyframes page-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
