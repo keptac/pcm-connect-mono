@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
@@ -56,6 +56,7 @@ class ProgramUpdate(Base):
     event_name = Column(String, nullable=True)
     event_detail = Column(String, nullable=True)
     reporting_period = Column(String, nullable=False)
+    reporting_date = Column(Date, nullable=False)
     summary = Column(Text, nullable=False)
     outcomes = Column(Text, nullable=True)
     challenges = Column(Text, nullable=True)
@@ -70,6 +71,7 @@ class ProgramUpdate(Base):
 
     university = relationship("University", back_populates="program_updates")
     program = relationship("Program", back_populates="updates")
+    submitter = relationship("User", foreign_keys=[submitted_by])
 
 
 class MandatoryProgram(Base):

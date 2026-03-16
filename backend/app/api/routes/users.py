@@ -20,8 +20,8 @@ from ...services.user_lifecycle import (
 from ..deps import require_role, get_current_user, resolve_university_scope
 
 router = APIRouter(prefix="/users", tags=["users"])
-TEAM_ACCESS_ROLES = ["super_admin", "student_admin", "secretary", "alumni_admin", "service_recovery"]
-TEAM_PROVISIONER_ROLES = ["super_admin", "student_admin", "secretary", "alumni_admin"]
+TEAM_ACCESS_ROLES = ["super_admin", "student_admin", "alumni_admin", "service_recovery"]
+TEAM_PROVISIONER_ROLES = ["super_admin", "student_admin", "alumni_admin"]
 PASSWORD_RECOVERY_ROLES = ["super_admin", "service_recovery"]
 GLOBAL_ONLY_ROLES = {"super_admin", "executive", "director"}
 SCOPED_PROVISIONABLE_ROLES = ["student_admin", "secretary", "alumni_admin", "program_manager", "finance_officer", "students_finance", "committee_member"]

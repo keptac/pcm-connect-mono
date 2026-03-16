@@ -13,7 +13,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 ADMIN_ROLES = ["super_admin"]
 CHAPTER_ROLES = ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin"]
 PROGRAM_ROLES = ["super_admin", "student_admin", "secretary", "program_manager", "committee_member", "executive", "director", "alumni_admin"]
-FUNDING_ROLES = ["super_admin", "student_admin", "secretary", "alumni_admin", "finance_officer", "students_finance", "executive", "director"]
+FUNDING_ROLES = ["super_admin", "student_admin", "alumni_admin", "finance_officer", "students_finance", "executive", "director"]
 FUNDING_WRITE_ROLES = ["super_admin", "finance_officer", "students_finance", "executive"]
 GENERAL_NETWORK_ROLES = [*CHAPTER_ROLES, "general_user"]
 GENERAL_USER_ROLES = ["general_user"]

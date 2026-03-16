@@ -7,10 +7,6 @@ import { exportRowsAsCsv } from "../lib/export";
 import { formatCurrency, formatDate, formatNumber } from "../lib/format";
 import { useUniversityScope } from "../lib/universityScope";
 
-function isMeetingEventName(value?: string | null) {
-  return (value || "").trim().toLowerCase() === "meeting";
-}
-
 function isPcmOfficeUniversity(university?: { name?: string | null } | null) {
   return (university?.name || "").trim().toLowerCase().startsWith("pcm office");
 }
@@ -21,6 +17,7 @@ function buildInitialForm(defaultUniversityId?: number | null, defaultReportingP
     event_name: "",
     event_detail: "",
     reporting_period: defaultReportingPeriod || "",
+    reporting_date: "",
     summary: "",
     outcomes: "",
     challenges: "",
@@ -32,6 +29,23 @@ function buildInitialForm(defaultUniversityId?: number | null, defaultReportingP
     existing_attachments: [] as any[],
     meeting_minutes_attachments: [] as File[],
     existing_minutes_attachments: [] as any[],
+    meeting_minutes_date: "",
+    meeting_minutes_venue: "",
+    meeting_minutes_notes: ""
+  };
+}
+
+function clearMeetingMinutesFields<T extends {
+  meeting_minutes_attachments: File[];
+  existing_minutes_attachments: any[];
+  meeting_minutes_date: string;
+  meeting_minutes_venue: string;
+  meeting_minutes_notes: string;
+}>(form: T): T {
+  return {
+    ...form,
+    meeting_minutes_attachments: [],
+    existing_minutes_attachments: [],
     meeting_minutes_date: "",
     meeting_minutes_venue: "",
     meeting_minutes_notes: ""
@@ -65,6 +79,10 @@ function formatMeetingMinutesLabel(attachment: any) {
   if (attachment?.meeting_date) parts.push(formatDate(attachment.meeting_date));
   if (attachment?.venue) parts.push(attachment.venue);
   return parts.join(" · ");
+}
+
+function isMeetingEventName(eventName?: string | null) {
+  return (eventName || "").trim().toLowerCase() === "meeting";
 }
 
 export default function UpdatesPage() {
@@ -235,6 +253,7 @@ export default function UpdatesPage() {
       event_name: update.event_name || update.title || "",
       event_detail: update.event_detail || "",
       reporting_period: update.reporting_period || defaultReportingPeriod || "",
+      reporting_date: update.reporting_date || "",
       summary: update.summary || "",
       outcomes: update.outcomes || "",
       challenges: update.challenges || "",
@@ -396,7 +415,7 @@ export default function UpdatesPage() {
                           </td>
                           <td>
                             <StatusBadge label={renderReportingPeriodLabel(update.reporting_period)} tone="info" />
-                            <div className="table-secondary">{formatDate(update.created_at)}</div>
+                            <div className="table-secondary">{formatDate(update.reporting_date || update.created_at)}</div>
                           </td>
                           <td>
                             <div className="table-primary">{formatNumber(update.beneficiaries_reached)} reached</div>
@@ -440,6 +459,7 @@ export default function UpdatesPage() {
                     specified_event: update.event_detail || "",
                     university_or_campus: update.university_name || "",
                     reporting_period: renderReportingPeriodLabel(update.reporting_period),
+                    reporting_date: formatDate(update.reporting_date || update.created_at),
                     beneficiaries_reached: update.beneficiaries_reached || 0,
                     volunteers_involved: update.volunteers_involved || 0,
                     funds_used: update.funds_used || 0,
@@ -451,8 +471,7 @@ export default function UpdatesPage() {
                     meeting_minutes_files: attachmentGroups.minutes.map((attachment: any) => attachment.name).join("; "),
                     meeting_minutes_date: firstMinutesAttachment?.meeting_date || "",
                     meeting_minutes_venue: firstMinutesAttachment?.venue || "",
-                    meeting_minutes_notes: firstMinutesAttachment?.notes || "",
-                    created_at: formatDate(update.created_at)
+                    meeting_minutes_notes: firstMinutesAttachment?.notes || ""
                   };
                 }))}
               />
@@ -485,17 +504,31 @@ export default function UpdatesPage() {
               className="mt-6 grid gap-4"
               onSubmit={async (event) => {
                 event.preventDefault();
-                const hasMeetingMinutes = form.meeting_minutes_attachments.length > 0 || form.existing_minutes_attachments.length > 0;
-                if (isMeetingEvent && (!hasMeetingMinutes || !form.meeting_minutes_date || !form.meeting_minutes_venue)) {
-                  window.alert("Meeting updates require uploaded minutes, the meeting date, and the venue.");
+                const hasMeetingMinutes = isMeetingEvent && (form.meeting_minutes_attachments.length > 0 || form.existing_minutes_attachments.length > 0);
+                if (isMeetingEvent && !hasMeetingMinutes) {
+                  window.alert("Meeting updates require uploaded minutes.");
+                  return;
+                }
+                if (hasMeetingMinutes && (!form.meeting_minutes_date || !form.meeting_minutes_venue)) {
+                  window.alert("Meeting minutes require both the meeting date and venue.");
+                  return;
+                }
+                if (!form.reporting_date) {
+                  window.alert("Reporting date is required.");
+                  return;
+                }
+                const resolvedUniversityId = Number(form.university_id || scopedUniversityId || defaultUniversityId || "");
+                if (!resolvedUniversityId) {
+                  window.alert("Select a university or campus, or switch into a scope before submitting.");
                   return;
                 }
                 const payload = new FormData();
-                payload.append("university_id", String(Number(form.university_id)));
+                payload.append("university_id", String(resolvedUniversityId));
                 payload.append("title", eventRequiresDetail ? form.event_detail : form.event_name);
                 payload.append("event_name", form.event_name);
                 if (form.event_detail) payload.append("event_detail", form.event_detail);
                 payload.append("reporting_period", form.reporting_period);
+                payload.append("reporting_date", form.reporting_date);
                 payload.append("summary", form.summary);
                 if (isMeetingEvent) {
                   payload.append("outcomes", "");
@@ -558,7 +591,7 @@ export default function UpdatesPage() {
                 )}
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-3">
                 <label className="field-shell">
                   <span className="field-label">Event</span>
                   <select
@@ -567,11 +600,12 @@ export default function UpdatesPage() {
                     onChange={(event) => {
                       const nextEventName = event.target.value;
                       const nextEventConfig = selectableEvents.find((item: any) => item.name === nextEventName);
-                      setForm({
+                      const nextForm = {
                         ...form,
                         event_name: nextEventName,
                         event_detail: nextEventConfig?.allow_other_detail ? form.event_detail : ""
-                      });
+                      };
+                      setForm(isMeetingEventName(nextEventName) ? nextForm : clearMeetingMinutesFields(nextForm));
                     }}
                   >
                     <option value="">Select event</option>
@@ -593,6 +627,16 @@ export default function UpdatesPage() {
                     ))}
                   </select>
                 </label>
+                <label className="field-shell">
+                  <span className="field-label">Reporting date</span>
+                  <input
+                    className="field-input"
+                    type="date"
+                    value={form.reporting_date}
+                    onChange={(event) => setForm({ ...form, reporting_date: event.target.value })}
+                    required
+                  />
+                </label>
               </div>
 
               {eventRequiresDetail ? (
@@ -607,12 +651,18 @@ export default function UpdatesPage() {
                 </label>
               ) : null}
 
+              {/* {isMeetingEvent ? (
+                <div className="rounded-[12px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  Meeting updates only keep the summary and the approved meeting minutes. Supporting files, narrative breakdowns, reach, missionaries, and funds used are cleared on save.
+                </div>
+              ) : null} */}
+
               {isMeetingEvent ? (
                 <div className="rounded-[16px] border border-slate-200/80 bg-slate-50/70 p-4">
                   <div className="grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
                     <div className="space-y-2">
                       <p className="field-label">Meeting minutes</p>
-                      <p className="text-sm text-slate-600">Upload the approved minutes for this meeting and capture the meeting details with them.</p>
+                      <p className="text-sm text-slate-600">Upload the approved minutes for this update and capture the meeting details with them.</p>
                     </div>
                     <label className="field-shell">
                       <span className="field-label">Minutes file</span>
@@ -697,56 +747,54 @@ export default function UpdatesPage() {
               ) : null}
 
               {!isMeetingEvent ? (
-                <>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="field-shell">
-                      <span className="field-label">Attach images or supporting documents</span>
-                      <input
-                        className="field-input"
-                        type="file"
-                        multiple
-                        accept=".jpg,.jpeg,.png,.pdf,.doc,.docx"
-                        onChange={(event) => setForm({ ...form, attachments: Array.from(event.target.files || []) })}
-                      />
-                    </label>
-                    <div className="rounded-[12px] border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
-                      Add photos, PDFs, or Word documents as supporting evidence for the submitted update.
-                    </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="field-shell">
+                    <span className="field-label">Attach images or supporting documents</span>
+                    <input
+                      className="field-input"
+                      type="file"
+                      multiple
+                      accept=".jpg,.jpeg,.png,.pdf,.doc,.docx"
+                      onChange={(event) => setForm({ ...form, attachments: Array.from(event.target.files || []) })}
+                    />
+                  </label>
+                  <div className="rounded-[12px] border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
+                    Add photos, PDFs, or Word documents as supporting evidence for the submitted update.
                   </div>
+                </div>
+              ) : null}
 
-                  {form.existing_attachments.length > 0 ? (
-                    <div className="rounded-[12px] border border-slate-200/80 bg-white/80 p-4">
-                      <p className="field-label">Current supporting attachments</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {form.existing_attachments.map((attachment: any) => (
-                          <div key={attachment.stored_name || attachment.url} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                            <a href={attachment.url} target="_blank" rel="noreferrer" className="text-sky-700 underline underline-offset-2">
-                              {attachment.name}
-                            </a>
-                            <button
-                              className="text-rose-700"
-                              type="button"
-                              onClick={() =>
-                                setForm({
-                                  ...form,
-                                  existing_attachments: form.existing_attachments.filter((item: any) => (item.stored_name || item.url) !== (attachment.stored_name || attachment.url))
-                                })
-                              }
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        ))}
+              {!isMeetingEvent && form.existing_attachments.length > 0 ? (
+                <div className="rounded-[12px] border border-slate-200/80 bg-white/80 p-4">
+                  <p className="field-label">Current supporting attachments</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {form.existing_attachments.map((attachment: any) => (
+                      <div key={attachment.stored_name || attachment.url} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                        <a href={attachment.url} target="_blank" rel="noreferrer" className="text-sky-700 underline underline-offset-2">
+                          {attachment.name}
+                        </a>
+                        <button
+                          className="text-rose-700"
+                          type="button"
+                          onClick={() =>
+                            setForm({
+                              ...form,
+                              existing_attachments: form.existing_attachments.filter((item: any) => (item.stored_name || item.url) !== (attachment.stored_name || attachment.url))
+                            })
+                          }
+                        >
+                          Remove
+                        </button>
                       </div>
-                    </div>
-                  ) : null}
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
-                  {form.attachments.length > 0 ? (
-                    <div className="rounded-[12px] border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
-                      {form.attachments.length} new supporting file{form.attachments.length === 1 ? "" : "s"} selected: {form.attachments.map((file) => file.name).join(", ")}
-                    </div>
-                  ) : null}
-                </>
+              {!isMeetingEvent && form.attachments.length > 0 ? (
+                <div className="rounded-[12px] border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
+                  {form.attachments.length} new supporting file{form.attachments.length === 1 ? "" : "s"} selected: {form.attachments.map((file) => file.name).join(", ")}
+                </div>
               ) : null}
 
               <label className="field-shell">

@@ -40,6 +40,12 @@ def _currency(value: float | int | None) -> str:
     return f"${float(value):,.0f}"
 
 
+def _date_label(value) -> str:
+    if not value:
+        return "Not recorded"
+    return value.strftime("%b %d, %Y")
+
+
 def _percentage(actual: float | int, expected: float | int) -> str:
     expected_value = float(expected or 0)
     if expected_value <= 0:
@@ -220,7 +226,7 @@ def _details_table(update, expected_attendance: int) -> Table:
         ["Event", update.event_detail or update.event_name or update.title],
         ["Linked program", update.program.name if update.program else "No linked ministry program"],
         ["Reporting period", update.reporting_period],
-        ["Submitted", update.created_at.strftime("%b %d, %Y") if update.created_at else "Not recorded"],
+        ["Reporting date", _date_label(getattr(update, "reporting_date", None) or update.created_at)],
         ["Expected visitors", str(expected_attendance)],
         ["Actual visitors", str(update.beneficiaries_reached or 0)],
         ["Funds used", _currency(update.funds_used)],
@@ -354,7 +360,8 @@ def build_program_update_report_pack(updates: list) -> bytes:
     archive = io.BytesIO()
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
         for update in updates:
-            filename = f"{update.created_at.strftime('%Y%m%d') if update.created_at else 'report'}-{_slugify(update.university.name if update.university else 'campus')}-{_slugify(update.event_detail or update.event_name or update.title)}.pdf"
+            report_date = getattr(update, "reporting_date", None)
+            filename = f"{report_date.strftime('%Y%m%d') if report_date else (update.created_at.strftime('%Y%m%d') if update.created_at else 'report')}-{_slugify(update.university.name if update.university else 'campus')}-{_slugify(update.event_detail or update.event_name or update.title)}.pdf"
             bundle.writestr(filename, build_program_update_report_pdf(update))
     archive.seek(0)
     return archive.getvalue()

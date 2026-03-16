@@ -913,6 +913,7 @@ def _ensure_program_update(
         title=event_name,
         event_name=event_name,
         reporting_period="2026-Q1",
+        reporting_date=date(2026, 3, min(28, index + 6)),
         summary=f"{program.name} is active at {university.name} and continues to grow its ministry reach.",
         outcomes="Student participation is rising and volunteer structures are stabilizing.",
         challenges="Transport, materials, and follow-up capacity still require strengthening.",

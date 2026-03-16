@@ -2,9 +2,12 @@ import asyncio
 import json
 import sys
 from datetime import date
+from io import BytesIO
 from pathlib import Path
 
 import pytest
+from pypdf import PdfReader
+from reportlab.pdfgen import canvas
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from starlette.requests import Request
@@ -13,11 +16,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi import HTTPException
 
-from app.api.routes.program_updates import _attachment_response_rows, _ensure_meeting_update_has_minutes, download_consolidated_report_pdf
+from app.api.routes.program_updates import _attachment_response_rows, _require_meeting_minutes, _serialize, download_consolidated_report_pdf
+from app.core.config import settings
 from app.db.base import Base
 from app.models import Conference, Program, ProgramUpdate, University, User
 from app.services.program_update_consolidated_exports import _build_consolidated_narrative_sections
-from app.services.program_update_exports import _build_cover_metric_items, _build_detailed_metric_items, _build_styles, _volunteer_helper_text
+from app.services.program_update_exports import (
+    _build_cover_metric_items,
+    _build_detailed_metric_items,
+    _build_styles,
+    _extract_doc_pages,
+    _extract_pdf_pages,
+    _volunteer_helper_text,
+    build_program_update_pdf,
+)
 
 
 @pytest.fixture()
@@ -63,6 +75,7 @@ def test_consolidated_report_pdf_downloads_combined_pdf(db_session: Session):
         title="Week of Prayer",
         event_name="Week of Prayer",
         reporting_period="2026-Q1",
+        reporting_date=date(2026, 3, 12),
         summary="Campus A reported strong participation and engagement.",
         outcomes="Students requested more follow-up Bible studies.",
         challenges="Sound system failed during one evening session.",
@@ -77,6 +90,7 @@ def test_consolidated_report_pdf_downloads_combined_pdf(db_session: Session):
         title="Evangelism Campaign",
         event_name="Evangelism Campaign",
         reporting_period="2026-Q1",
+        reporting_date=date(2026, 3, 18),
         summary="Campus B combined outreach and literature distribution.",
         outcomes="Several community visitors returned for Sabbath worship.",
         challenges="Transport costs reduced the planned field coverage.",
@@ -157,6 +171,7 @@ def test_attachment_response_rows_include_meeting_minutes_metadata(db_session: S
         title="Committee Update",
         event_name="Committee Meeting",
         reporting_period="2026-Q1",
+        reporting_date=date(2026, 3, 10),
         summary="Monthly committee meeting completed.",
         attachments_json=json.dumps(
             [
@@ -199,22 +214,158 @@ def test_attachment_response_rows_include_meeting_minutes_metadata(db_session: S
     assert attachments[0]["notes"] == "Approved committee minutes"
 
 
-def test_meeting_updates_require_uploaded_minutes():
-    with pytest.raises(HTTPException) as exc_info:
-        _ensure_meeting_update_has_minutes("Meeting")
+def test_serialize_includes_reporting_date(db_session: Session):
+    conference = Conference(name="East Zimbabwe Conference", union_name="ZUC")
+    university = University(name="Campus C", conference=conference)
+    update = ProgramUpdate(
+        university=university,
+        title="Health Expo",
+        event_name="Health Expo",
+        reporting_period="2026-Q1",
+        reporting_date=date(2026, 3, 22),
+        summary="Health screenings were completed.",
+    )
+    db_session.add_all([conference, university, update])
+    db_session.commit()
 
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.detail == "Meeting updates require uploaded meeting minutes"
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/program-updates",
+            "headers": [],
+            "scheme": "http",
+            "server": ("testserver", 80),
+            "client": ("testclient", 50000),
+            "root_path": "",
+            "query_string": b"",
+        }
+    )
+
+    serialized = _serialize(update, request)
+
+    assert serialized.reporting_date == date(2026, 3, 22)
 
 
-def test_meeting_updates_accept_existing_minutes_attachments():
-    _ensure_meeting_update_has_minutes(
-        "Meeting",
-        kept_attachments=[
+def test_meeting_updates_require_minutes():
+    with pytest.raises(HTTPException) as exc:
+        _require_meeting_minutes("Meeting", False)
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "Meeting updates require uploaded minutes"
+
+
+def test_meeting_download_reformats_minutes_into_pcm_branded_pdf(db_session: Session, tmp_path: Path):
+    previous_upload_dir = settings.upload_dir
+    settings.upload_dir = str(tmp_path)
+    try:
+        source_pdf = tmp_path / "minutes-source.pdf"
+        source_canvas = canvas.Canvas(str(source_pdf))
+        source_text = source_canvas.beginText(72, 770)
+        for line in ["Executive Committee Meeting", "Opening prayer", "Agenda adopted", "Closing remarks"]:
+            source_text.textLine(line)
+        source_canvas.drawText(source_text)
+        source_canvas.save()
+
+        conference = Conference(name="North Zimbabwe Conference", union_name="ZUC")
+        university = University(name="PCM Office", conference=conference)
+        submitter = User(email="secretary@example.com", name="Campus Secretary", password_hash="hashed")
+        db_session.add_all([conference, university, submitter])
+        db_session.flush()
+        update = ProgramUpdate(
+            university=university,
+            title="Meeting",
+            event_name="Meeting",
+            reporting_period="2026-Q1",
+            reporting_date=date(2026, 3, 14),
+            summary="Monthly executive meeting minutes.",
+            attachments_json=json.dumps(
+                [
+                    {
+                        "name": "minutes-source.pdf",
+                        "stored_name": source_pdf.name,
+                        "content_type": "application/pdf",
+                        "size_bytes": source_pdf.stat().st_size,
+                        "category": "minutes",
+                        "meeting_date": "2026-03-14",
+                        "venue": "PCM Office Boardroom",
+                        "notes": "Approved minutes",
+                    }
+                ]
+            ),
+            submitted_by=submitter.id,
+        )
+        db_session.add(update)
+        db_session.commit()
+
+        pdf_bytes = build_program_update_pdf(update)
+        extracted_text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_bytes)).pages)
+
+        assert "Meeting Minutes" in extracted_text
+        assert "Campus Secretary" in extracted_text
+        assert "PCM Office Boardroom" in extracted_text
+        assert "Agenda adopted" in extracted_text
+    finally:
+        settings.upload_dir = previous_upload_dir
+
+
+def test_meeting_download_handles_long_minutes_content_without_layout_error(db_session: Session, monkeypatch):
+    conference = Conference(name="North Zimbabwe Conference", union_name="ZUC")
+    university = University(name="PCM Office", conference=conference)
+    submitter = User(email="secretary@example.com", name="Campus Secretary", password_hash="hashed")
+    db_session.add_all([conference, university, submitter])
+    db_session.flush()
+
+    update = ProgramUpdate(
+        university=university,
+        title="Meeting",
+        event_name="Meeting",
+        reporting_period="2026-Q1",
+        reporting_date=date(2026, 3, 14),
+        summary="Monthly executive meeting minutes.",
+        submitted_by=submitter.id,
+    )
+    db_session.add(update)
+    db_session.commit()
+
+    long_minutes_text = "\n".join(
+        f"{index}. {'Agenda item and discussion notes ' * 8}".strip() for index in range(1, 180)
+    )
+    monkeypatch.setattr(
+        "app.services.program_update_exports._extract_meeting_minutes_documents",
+        lambda update: [
             {
-                "name": "minutes.pdf",
-                "stored_name": "minutes.pdf",
-                "category": "minutes",
+                "name": "minutes-march.docx",
+                "meeting_date": "2026-03-14",
+                "venue": "PCM Office Boardroom",
+                "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "pages": [long_minutes_text],
             }
         ],
     )
+
+    pdf_bytes = build_program_update_pdf(update)
+    reader = PdfReader(BytesIO(pdf_bytes))
+    extracted_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+
+    assert len(reader.pages) >= 3
+    assert "Meeting Minutes" in extracted_text
+    assert "Agenda item and discussion notes" in extracted_text
+
+
+def test_extract_pdf_pages_uses_ocr_when_embedded_text_is_missing(monkeypatch):
+    monkeypatch.setattr("app.services.program_update_exports._extract_pdf_text_pages", lambda path: [])
+    monkeypatch.setattr("app.services.program_update_exports._extract_pdf_ocr_pages", lambda path: ["Scanned committee minutes"])
+
+    pages = _extract_pdf_pages(Path("minutes.pdf"))
+
+    assert pages == ["Scanned committee minutes"]
+
+
+def test_extract_doc_pages_uses_legacy_doc_extractor(monkeypatch):
+    monkeypatch.setattr("app.services.program_update_exports._run_legacy_doc_extractor", lambda path: "Opening prayer\n\nAgenda adopted")
+
+    pages = _extract_doc_pages(Path("minutes.doc"))
+
+    assert len(pages) == 1
+    assert "Agenda adopted" in pages[0]

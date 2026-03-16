@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.api.deps import FUNDING_WRITE_ROLES, require_role
+from app.api.deps import FUNDING_ROLES, FUNDING_WRITE_ROLES, require_role
 from app.api.routes.auth import change_password, login
 from app.api.routes.funding import create_funding_record
 from app.api.routes.users import create_user, list_users, recover_user_password, update_user
@@ -185,7 +185,7 @@ def test_service_recovery_cannot_provision_team_accounts(db_session: Session):
     assert exc_info.value.detail == "Insufficient role"
 
 
-def test_secretary_can_provision_scoped_secretary_account(db_session: Session):
+def test_secretary_cannot_provision_team_accounts(db_session: Session):
     university = University(name="Example University")
     provisioner = User(
         email="secretary@example.com",
@@ -197,23 +197,21 @@ def test_secretary_can_provision_scoped_secretary_account(db_session: Session):
     db_session.commit()
     add_role(db_session, provisioner, "secretary")
 
-    created = create_user(
-        UserCreate(
-            email="assistant-secretary@example.com",
-            name="Assistant Secretary",
-            password="secret123",
-            roles=["secretary"],
-            university_id=university.id,
-        ),
-        db=db_session,
-        user=provisioner,
-    )
+    with pytest.raises(HTTPException) as exc_info:
+        create_user(
+            UserCreate(
+                email="assistant-secretary@example.com",
+                name="Assistant Secretary",
+                password="secret123",
+                roles=["secretary"],
+                university_id=university.id,
+            ),
+            db=db_session,
+            user=provisioner,
+        )
 
-    stored_user = db_session.query(User).filter(User.email == "assistant-secretary@example.com").first()
-    assert stored_user is not None
-    assert created.roles == ["secretary"]
-    assert created.university_id == university.id
-    assert stored_user.university_id == university.id
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Insufficient role"
 
 
 def test_service_recovery_can_reset_password_and_force_change(db_session: Session):
@@ -448,3 +446,21 @@ def test_executive_can_record_treasury_entry(db_session: Session):
     assert created.university_id == university.id
     assert created.recorded_by == executive_user.id
     assert created.receipt_category == "Donation"
+
+
+def test_secretary_cannot_access_funding_scope(db_session: Session):
+    secretary_user = User(
+        email="secretary@example.com",
+        name="Campus Secretary",
+        password_hash="hashed",
+    )
+    db_session.add(secretary_user)
+    db_session.commit()
+    add_role(db_session, secretary_user, "secretary")
+
+    guard = require_role(FUNDING_ROLES)
+    with pytest.raises(HTTPException) as exc_info:
+        guard(db=db_session, user=secretary_user)
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Insufficient role"

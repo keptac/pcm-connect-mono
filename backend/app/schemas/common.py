@@ -283,6 +283,7 @@ class ProgramImpactUpdateBase(SchemaModel):
     event_name: str
     event_detail: Optional[str] = None
     reporting_period: str
+    reporting_date: date
     summary: str
     outcomes: Optional[str] = None
     challenges: Optional[str] = None
@@ -303,6 +304,7 @@ class ProgramImpactUpdatePatch(SchemaModel):
     event_name: Optional[str] = None
     event_detail: Optional[str] = None
     reporting_period: Optional[str] = None
+    reporting_date: Optional[date] = None
     summary: Optional[str] = None
     outcomes: Optional[str] = None
     challenges: Optional[str] = None

@@ -1,7 +1,13 @@
+import importlib
 import json
+import shutil
+import subprocess
+import tempfile
+from datetime import date
 from io import BytesIO
 from pathlib import Path
-from zipfile import ZIP_DEFLATED, ZipFile
+from xml.etree import ElementTree
+from zipfile import BadZipFile, ZIP_DEFLATED, ZipFile
 
 from reportlab.graphics.shapes import Drawing, Line, Rect, String
 from reportlab.lib import colors
@@ -16,6 +22,7 @@ from reportlab.platypus import (
     Image,
     PageBreak,
     Paragraph,
+    Preformatted,
     SimpleDocTemplate,
     Spacer,
     Table,
@@ -62,18 +69,23 @@ PDF_FONT_NAMES = {
     "bold": "Helvetica-Bold",
 }
 PDF_FONT_REGISTRATION_ATTEMPTED = False
+OCR_ENGINE = None
+OCR_ENGINE_ATTEMPTED = False
 
 
 def build_program_update_report_pack(updates: list[ProgramUpdate]) -> bytes:
     bundle = BytesIO()
     with ZipFile(bundle, "w", ZIP_DEFLATED) as archive:
         for index, update in enumerate(updates, start=1):
-            filename = f"{index:02d}_{_slugify(_report_title(update))}.pdf"
+            filename = f"{index:02d}_{_slugify(_meeting_report_title(update) if _is_meeting_update(update) else _report_title(update))}.pdf"
             archive.writestr(filename, build_program_update_pdf(update))
     return bundle.getvalue()
 
 
 def build_program_update_pdf(update: ProgramUpdate) -> bytes:
+    if _is_meeting_update(update):
+        return _build_meeting_minutes_pdf(update)
+
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -139,6 +151,35 @@ def build_program_update_pdf(update: ProgramUpdate) -> bytes:
         story,
         onFirstPage=lambda canvas, built_doc: _decorate_cover_page(canvas, built_doc, update),
         onLaterPages=lambda canvas, built_doc: _decorate_page(canvas, built_doc, update),
+    )
+    return buffer.getvalue()
+
+
+def _build_meeting_minutes_pdf(update: ProgramUpdate) -> bytes:
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=16 * mm,
+        rightMargin=16 * mm,
+        topMargin=34 * mm,
+        bottomMargin=16 * mm,
+        title=_meeting_report_title(update),
+        author="Public Campus Ministries",
+    )
+    styles = _build_styles()
+    minute_documents = _extract_meeting_minutes_documents(update)
+
+    story = [
+        *_build_meeting_minutes_cover_page(update, styles, minute_documents),
+        PageBreak(),
+        *_build_meeting_minutes_content(update, styles, minute_documents),
+    ]
+
+    doc.build(
+        story,
+        onFirstPage=lambda canvas, built_doc: _decorate_meeting_minutes_cover_page(canvas, built_doc, update),
+        onLaterPages=lambda canvas, built_doc: _decorate_meeting_minutes_page(canvas, built_doc, update),
     )
     return buffer.getvalue()
 
@@ -330,6 +371,14 @@ def _build_styles():
             leading=11,
             textColor=PCM_SLATE,
         ),
+        "minutesContent": ParagraphStyle(
+            "minutesContent",
+            parent=sample["Code"],
+            fontName=fonts["regular"],
+            fontSize=9,
+            leading=13,
+            textColor=colors.HexColor("#243446"),
+        ),
         "valueRight": ParagraphStyle(
             "valueRight",
             parent=sample["BodyText"],
@@ -373,6 +422,32 @@ def _build_cover_page(update: ProgramUpdate, styles):
     return cover_elements
 
 
+def _build_meeting_minutes_cover_page(update: ProgramUpdate, styles, minute_documents: list[dict]):
+    cover_elements = [Spacer(1, 18 * mm)]
+
+    logo_path = _logo_path()
+    if logo_path:
+        logo = _scaled_image(logo_path, 34 * mm, 34 * mm)
+        if logo is not None:
+            logo.hAlign = "CENTER"
+            cover_elements.extend([logo, Spacer(1, 8 * mm)])
+
+    cover_elements.extend(
+        [
+            Paragraph("Public Campus Ministries", styles["coverEyebrow"]),
+            Spacer(1, 3 * mm),
+            Paragraph("Meeting Minutes", styles["coverTitle"]),
+            Spacer(1, 2 * mm),
+            Paragraph(_safe_text(_display_event_name(update)), styles["coverSubtitle"]),
+            Spacer(1, 8 * mm),
+            _build_meeting_minutes_identity_table(update, styles, minute_documents),
+            Spacer(1, 7 * mm),
+            _build_meeting_minutes_summary_panel(update, styles, minute_documents),
+        ]
+    )
+    return cover_elements
+
+
 def _build_hero(update: ProgramUpdate, styles):
     title = _display_event_name(update)
     schedule = _program_schedule(update)
@@ -380,6 +455,7 @@ def _build_hero(update: ProgramUpdate, styles):
         part
         for part in [
             f"<b>Reporting period:</b> {escape(update.reporting_period or 'Not set')}",
+            f"<b>Reporting date:</b> {_format_date(update.reporting_date)}",
             f"<b>Generated:</b> {_format_datetime(update.updated_at or update.created_at)}",
             f"<b>Audience:</b> {escape(update.program.audience) if update.program and update.program.audience else 'General'}",
         ]
@@ -534,6 +610,8 @@ def _build_context_table(update: ProgramUpdate, styles):
         ("University / campus", update.university.name if update.university else "PCM Office / Network"),
         ("Linked ministry program", update.program.name if update.program else "Not linked"),
         ("Program audience", update.program.audience if update.program and update.program.audience else "General"),
+        ("Reporting date", _format_date(update.reporting_date)),
+        ("Reporting period", update.reporting_period or "Not set"),
         ("Schedule", _program_schedule(update)),
         ("Duration", _format_duration(update.program.duration_weeks if update.program else None)),
         ("Expected visitors / reach", _format_number(expected) if expected else "Not configured"),
@@ -570,6 +648,7 @@ def _build_cover_identity_table(update: ProgramUpdate, styles):
         ("University / campus", university.name if university else "PCM network"),
         ("Conference", conference.name if conference else "Not assigned"),
         ("Union", conference.union_name if conference and conference.union_name else "Not assigned"),
+        ("Reporting date", _format_date(update.reporting_date)),
         ("Reporting period", update.reporting_period or "Not set"),
         ("Schedule", _program_schedule(update)),
         ("Generated", _format_datetime(update.updated_at or update.created_at)),
@@ -618,6 +697,71 @@ def _build_cover_summary_panel(update: ProgramUpdate, styles):
                 styles["callout"],
             )
         ]],
+        colWidths=[CONTENT_WIDTH - (4 * mm)],
+    )
+    content.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EFF4FF")),
+                ("BOX", (0, 0), (-1, -1), 1, PCM_BORDER),
+                ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 12),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+            ]
+        )
+    )
+    return content
+
+
+def _build_meeting_minutes_identity_table(update: ProgramUpdate, styles, minute_documents: list[dict]):
+    first_minutes_document = minute_documents[0] if minute_documents else {}
+    rows = [
+        ("University / campus", update.university.name if update.university else "PCM network"),
+        ("Meeting", _display_event_name(update)),
+        ("Date", _format_date(_meeting_date_value(update, first_minutes_document))),
+        ("Venue", first_minutes_document.get("venue") or "Not recorded"),
+        ("Uploaded by", _uploaded_by_label(update)),
+        ("Uploaded on", _format_datetime(update.updated_at or update.created_at)),
+    ]
+    table = Table(
+        [
+            [
+                Paragraph(escape(label), styles["coverFactLabel"]),
+                Paragraph(_safe_text(value), styles["coverFactValue"]),
+            ]
+            for label, value in rows
+        ],
+        colWidths=[58 * mm, 112 * mm],
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                ("BOX", (0, 0), (-1, -1), 1, PCM_BORDER),
+                ("INNERGRID", (0, 0), (-1, -1), 0.8, PCM_BORDER),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F7FAFD")),
+                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+            ]
+        )
+    )
+    return table
+
+
+def _build_meeting_minutes_summary_panel(update: ProgramUpdate, styles, minute_documents: list[dict]):
+    extracted_page_count = sum(len(item.get("pages") or []) for item in minute_documents)
+    summary_parts = [
+        f"<b>Source files:</b> {len(minute_documents) or 0}",
+        f"<b>Extracted pages:</b> {extracted_page_count or 0}",
+    ]
+    if update.summary:
+        summary_parts.append(_safe_text(update.summary))
+    content = Table(
+        [[Paragraph("<br/><br/>".join(summary_parts), styles["callout"])]],
         colWidths=[CONTENT_WIDTH - (4 * mm)],
     )
     content.setStyle(
@@ -827,6 +971,81 @@ def _decorate_page(canvas, doc, update: ProgramUpdate):
     canvas.restoreState()
 
 
+def _decorate_meeting_minutes_page(canvas, doc, update: ProgramUpdate):
+    fonts = _ensure_pdf_fonts()
+    canvas.saveState()
+    page_width, page_height = A4
+    canvas.setFillColor(PCM_BLUE)
+    canvas.rect(0, page_height - 24 * mm, page_width, 24 * mm, stroke=0, fill=1)
+    canvas.setFillColor(PCM_VIOLET)
+    canvas.rect(page_width - 58 * mm, page_height - 24 * mm, 58 * mm, 24 * mm, stroke=0, fill=1)
+    canvas.setFillColor(PCM_RED)
+    canvas.rect(page_width - 24 * mm, page_height - 24 * mm, 24 * mm, 24 * mm, stroke=0, fill=1)
+
+    logo_path = _logo_path()
+    if logo_path:
+        canvas.drawImage(str(logo_path), 16 * mm, page_height - 18 * mm, width=12 * mm, height=12 * mm, mask="auto", preserveAspectRatio=True)
+        header_x = 31 * mm
+    else:
+        header_x = 16 * mm
+
+    canvas.setFillColor(colors.white)
+    canvas.setFont(fonts["bold"], 11)
+    canvas.drawString(header_x, page_height - 11 * mm, "Public Campus Ministries")
+    canvas.setFont(fonts["regular"], 8.5)
+    canvas.drawString(header_x, page_height - 15.5 * mm, "Meeting minutes")
+
+    canvas.setStrokeColor(PCM_BORDER)
+    canvas.line(doc.leftMargin, 14 * mm, page_width - doc.rightMargin, 14 * mm)
+    canvas.setFillColor(PCM_SLATE)
+    canvas.setFont(fonts["regular"], 8)
+    canvas.drawString(
+        doc.leftMargin,
+        9.5 * mm,
+        _truncate_canvas_text(
+            canvas,
+            _meeting_report_title(update),
+            page_width - doc.leftMargin - doc.rightMargin - (24 * mm),
+            fonts["regular"],
+            8,
+        ),
+    )
+    canvas.drawRightString(page_width - doc.rightMargin, 9.5 * mm, f"Page {doc.page}")
+    canvas.restoreState()
+
+
+def _decorate_meeting_minutes_cover_page(canvas, doc, update: ProgramUpdate):
+    fonts = _ensure_pdf_fonts()
+    canvas.saveState()
+    page_width, page_height = A4
+    canvas.setFillColor(colors.HexColor("#F7FAFF"))
+    canvas.rect(0, 0, page_width, page_height, stroke=0, fill=1)
+    canvas.setFillColor(PCM_BLUE)
+    canvas.rect(0, page_height - 38 * mm, page_width, 38 * mm, stroke=0, fill=1)
+    canvas.setFillColor(PCM_VIOLET)
+    canvas.rect(page_width - 72 * mm, page_height - 38 * mm, 72 * mm, 38 * mm, stroke=0, fill=1)
+    canvas.setFillColor(PCM_RED)
+    canvas.rect(0, 0, page_width, 12 * mm, stroke=0, fill=1)
+
+    canvas.setStrokeColor(colors.HexColor("#E4EBF7"))
+    canvas.line(doc.leftMargin, 24 * mm, page_width - doc.rightMargin, 24 * mm)
+    canvas.setFillColor(PCM_SLATE)
+    canvas.setFont(fonts["regular"], 8.5)
+    canvas.drawString(doc.leftMargin, 17 * mm, "Public Campus Ministries meeting minutes")
+    canvas.drawRightString(
+        page_width - doc.rightMargin,
+        17 * mm,
+        _truncate_canvas_text(
+            canvas,
+            _format_date(update.reporting_date),
+            56 * mm,
+            fonts["regular"],
+            8.5,
+        ),
+    )
+    canvas.restoreState()
+
+
 def _decorate_cover_page(canvas, doc, update: ProgramUpdate):
     fonts = _ensure_pdf_fonts()
     canvas.saveState()
@@ -859,7 +1078,7 @@ def _decorate_cover_page(canvas, doc, update: ProgramUpdate):
     canvas.restoreState()
 
 
-def _resolve_attachments(update: ProgramUpdate):
+def _resolve_attachment_rows(update: ProgramUpdate):
     parsed = []
     if update.attachments_json:
         try:
@@ -869,8 +1088,7 @@ def _resolve_attachments(update: ProgramUpdate):
         except json.JSONDecodeError:
             parsed = []
 
-    image_rows = []
-    document_rows = []
+    resolved_rows = []
     for item in parsed:
         if not isinstance(item, dict):
             continue
@@ -885,12 +1103,28 @@ def _resolve_attachments(update: ProgramUpdate):
             "path": file_path,
             "content_type": item.get("content_type"),
             "size_bytes": item.get("size_bytes"),
+            "category": item.get("category"),
+            "meeting_date": item.get("meeting_date"),
+            "venue": item.get("venue"),
+            "notes": item.get("notes"),
         }
+        resolved_rows.append(row)
+    return resolved_rows
+
+
+def _resolve_attachments(update: ProgramUpdate):
+    image_rows = []
+    document_rows = []
+    for row in _resolve_attachment_rows(update):
         if _is_image_attachment(row["name"], row["content_type"]):
             image_rows.append(row)
         else:
             document_rows.append(row)
     return image_rows, document_rows
+
+
+def _resolve_minutes_attachments(update: ProgramUpdate) -> list[dict]:
+    return [row for row in _resolve_attachment_rows(update) if row.get("category") == "minutes"]
 
 
 def _logo_path() -> Path | None:
@@ -1191,6 +1425,12 @@ def _format_datetime(value) -> str:
     return value.strftime("%d %b %Y, %H:%M")
 
 
+def _format_date(value) -> str:
+    if not value:
+        return "No date"
+    return value.strftime("%d %b %Y")
+
+
 def _format_file_size(size_bytes: int | None) -> str:
     if not size_bytes:
         return ""
@@ -1206,11 +1446,380 @@ def _report_title(update: ProgramUpdate) -> str:
     return f"{university_name}_{update.reporting_period}_{_display_event_name(update)}"
 
 
+def _meeting_report_title(update: ProgramUpdate) -> str:
+    university_name = update.university.short_code if update.university and update.university.short_code else (update.university.name if update.university else "network")
+    return f"{university_name}_{update.reporting_period}_meeting_minutes"
+
+
 def _slugify(value: str) -> str:
     cleaned = "".join(char.lower() if char.isalnum() else "_" for char in value)
     while "__" in cleaned:
         cleaned = cleaned.replace("__", "_")
     return cleaned.strip("_") or "impact_report"
+
+
+def _is_meeting_update(update: ProgramUpdate) -> bool:
+    return (update.event_name or update.title or "").strip().lower() == "meeting"
+
+
+def _meeting_date_value(update: ProgramUpdate, minute_document: dict | None = None):
+    if minute_document and minute_document.get("meeting_date"):
+        try:
+            return date.fromisoformat(str(minute_document["meeting_date"]))
+        except ValueError:
+            pass
+    return update.reporting_date
+
+
+def _uploaded_by_label(update: ProgramUpdate) -> str:
+    if getattr(update, "submitter", None) and update.submitter.name:
+        return update.submitter.name
+    return "PCM system"
+
+
+def _build_meeting_minutes_content(update: ProgramUpdate, styles, minute_documents: list[dict]):
+    if not minute_documents:
+        return [
+            Paragraph("Minutes content", styles["section"]),
+            Paragraph("No readable meeting-minutes attachment was found for this update.", styles["bodyMuted"]),
+        ]
+
+    content = [Paragraph("Original minutes content", styles["section"])]
+    for index, document in enumerate(minute_documents):
+        content.append(Paragraph(_safe_text(document["name"]), styles["docName"]))
+        content.append(
+            Paragraph(
+                _safe_text(
+                    " | ".join(
+                        part
+                        for part in [
+                            document.get("meeting_date") or _format_date(update.reporting_date),
+                            document.get("venue") or "Venue not recorded",
+                            document.get("content_type") or "Document",
+                        ]
+                        if part
+                    )
+                ),
+                styles["docMeta"],
+            )
+        )
+        content.append(Spacer(1, 6))
+        for page_number, page_text in enumerate(document.get("pages") or [], start=1):
+            if page_number > 1:
+                content.append(Spacer(1, 8))
+            content.append(Paragraph(f"Source page {page_number}", styles["tableLabel"]))
+            content.append(Spacer(1, 4))
+            content.extend(_build_meeting_minutes_text_blocks(page_text, styles))
+            content.append(Spacer(1, 10))
+        if index < len(minute_documents) - 1:
+            content.append(PageBreak())
+    return content
+
+
+def _build_meeting_minutes_text_blocks(text: str, styles):
+    normalized = _normalize_extracted_text(text)
+    if not normalized:
+        return [Paragraph("No readable text could be rendered for this source page.", styles["bodyMuted"])]
+    return [
+        Preformatted(
+            normalized,
+            styles["minutesContent"],
+            maxLineLength=98,
+        )
+    ]
+
+
+def _extract_meeting_minutes_documents(update: ProgramUpdate) -> list[dict]:
+    documents = []
+    for attachment in _resolve_minutes_attachments(update):
+        pages = _extract_minutes_attachment_pages(attachment)
+        documents.append({**attachment, "pages": pages})
+    return documents
+
+
+def _extract_minutes_attachment_pages(attachment: dict) -> list[str]:
+    path = attachment["path"]
+    suffix = path.suffix.lower()
+    try:
+        if suffix == ".pdf":
+            pages = _extract_pdf_pages(path)
+        elif suffix == ".docx" or _looks_like_docx(path):
+            pages = _extract_docx_pages(path)
+        elif suffix == ".doc":
+            pages = _extract_doc_pages(path)
+        else:
+            pages = []
+    except Exception:
+        pages = []
+
+    if pages:
+        return pages
+
+    return [
+        "\n".join(
+            [
+                f"Original file: {attachment['name']}",
+                "PCM could not extract readable text from this minutes document.",
+                "The original file remains stored in the system attachments.",
+            ]
+        )
+    ]
+
+
+def _extract_pdf_pages(path: Path) -> list[str]:
+    pages = _extract_pdf_text_pages(path)
+    if pages:
+        return pages
+    return _extract_pdf_ocr_pages(path)
+
+
+def _extract_pdf_text_pages(path: Path) -> list[str]:
+    reader_class = _load_pdf_reader_class()
+    if reader_class is None:
+        return []
+
+    pages = []
+    reader = reader_class(str(path))
+    for page in reader.pages:
+        text = _normalize_extracted_text(page.extract_text() or "")
+        if text:
+            pages.append(text)
+    return pages
+
+
+def _extract_pdf_ocr_pages(path: Path) -> list[str]:
+    renderer_module = _load_pdf_renderer_module()
+    ocr_engine = _load_ocr_engine()
+    if renderer_module is None or ocr_engine is None:
+        return []
+
+    try:
+        pdf_document = renderer_module.open(str(path))
+    except Exception:
+        return []
+
+    pages = []
+    try:
+        matrix = renderer_module.Matrix(2, 2)
+        for page in pdf_document:
+            try:
+                pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+                page_text = _extract_ocr_text_from_png_bytes(pixmap.tobytes("png"), ocr_engine)
+            except Exception:
+                continue
+            if page_text:
+                pages.append(page_text)
+    finally:
+        try:
+            pdf_document.close()
+        except Exception:
+            pass
+    return pages
+
+
+def _extract_docx_pages(path: Path) -> list[str]:
+    try:
+        with ZipFile(path) as archive:
+            xml_bytes = archive.read("word/document.xml")
+    except (KeyError, BadZipFile):
+        return []
+
+    root = ElementTree.fromstring(xml_bytes)
+    namespace = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    paragraphs = []
+    for paragraph in root.iter(f"{namespace}p"):
+        text = "".join(node.text or "" for node in paragraph.iter(f"{namespace}t")).strip()
+        if text:
+            paragraphs.append(text)
+    return _chunk_minutes_paragraphs(paragraphs)
+
+
+def _extract_doc_pages(path: Path) -> list[str]:
+    extracted_text = _run_legacy_doc_extractor(path)
+    if extracted_text:
+        return _chunk_plain_text(extracted_text)
+
+    if shutil.which("soffice") or shutil.which("libreoffice"):
+        converted_docx = _convert_doc_to_docx(path)
+        if converted_docx is not None:
+            return _extract_docx_pages(converted_docx)
+    return []
+
+
+def _chunk_minutes_paragraphs(paragraphs: list[str], char_limit: int = 2800) -> list[str]:
+    if not paragraphs:
+        return []
+
+    chunks = []
+    current: list[str] = []
+    current_length = 0
+    for paragraph in paragraphs:
+        addition = len(paragraph) + (2 if current else 0)
+        if current and current_length + addition > char_limit:
+            chunks.append("\n\n".join(current))
+            current = [paragraph]
+            current_length = len(paragraph)
+        else:
+            current.append(paragraph)
+            current_length += addition
+    if current:
+        chunks.append("\n\n".join(current))
+    return chunks
+
+
+def _chunk_plain_text(text: str, char_limit: int = 2800) -> list[str]:
+    normalized = _normalize_extracted_text(text)
+    if not normalized:
+        return []
+    paragraphs = [paragraph.strip() for paragraph in normalized.split("\n\n") if paragraph.strip()]
+    return _chunk_minutes_paragraphs(paragraphs, char_limit=char_limit)
+
+
+def _normalize_extracted_text(text: str) -> str:
+    lines = [line.rstrip() for line in text.replace("\r", "\n").split("\n")]
+    cleaned = []
+    previous_blank = False
+    for line in lines:
+        normalized = line.strip()
+        if not normalized:
+            if not previous_blank:
+                cleaned.append("")
+            previous_blank = True
+            continue
+        cleaned.append(normalized)
+        previous_blank = False
+    return "\n".join(cleaned).strip()
+
+
+def _looks_like_docx(path: Path) -> bool:
+    try:
+        with ZipFile(path) as archive:
+            return "word/document.xml" in archive.namelist()
+    except BadZipFile:
+        return False
+
+
+def _load_pdf_reader_class():
+    for module_name in ("pypdf", "PyPDF2"):
+        try:
+            module = importlib.import_module(module_name)
+        except ImportError:
+            continue
+        reader_class = getattr(module, "PdfReader", None)
+        if reader_class is not None:
+            return reader_class
+    return None
+
+
+def _load_pdf_renderer_module():
+    for module_name in ("pymupdf", "fitz"):
+        try:
+            return importlib.import_module(module_name)
+        except ImportError:
+            continue
+    return None
+
+
+def _load_ocr_engine():
+    global OCR_ENGINE, OCR_ENGINE_ATTEMPTED
+    if OCR_ENGINE_ATTEMPTED:
+        return OCR_ENGINE
+
+    OCR_ENGINE_ATTEMPTED = True
+    try:
+        rapidocr_module = importlib.import_module("rapidocr_onnxruntime")
+    except ImportError:
+        OCR_ENGINE = None
+        return OCR_ENGINE
+
+    engine_class = getattr(rapidocr_module, "RapidOCR", None)
+    if engine_class is None:
+        OCR_ENGINE = None
+        return OCR_ENGINE
+
+    try:
+        OCR_ENGINE = engine_class()
+    except Exception:
+        OCR_ENGINE = None
+    return OCR_ENGINE
+
+
+def _extract_ocr_text_from_png_bytes(image_bytes: bytes, ocr_engine) -> str:
+    pil_image_module = importlib.import_module("PIL.Image")
+    numpy_module = importlib.import_module("numpy")
+
+    image = pil_image_module.open(BytesIO(image_bytes)).convert("RGB")
+    ocr_result, _ = ocr_engine(numpy_module.array(image))
+    lines = []
+    for row in ocr_result or []:
+        if not isinstance(row, (list, tuple)) or len(row) < 2:
+            continue
+        text = str(row[1]).strip()
+        if text:
+            lines.append(text)
+    return _normalize_extracted_text("\n".join(lines))
+
+
+def _run_legacy_doc_extractor(path: Path) -> str | None:
+    commands = [
+        ["antiword", "-w", "0", str(path)],
+        ["catdoc", str(path)],
+    ]
+    for command in commands:
+        if not shutil.which(command[0]):
+            continue
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, check=False)
+        except OSError:
+            continue
+        if result.returncode != 0:
+            continue
+        normalized = _normalize_extracted_text(result.stdout)
+        if normalized:
+            return normalized
+    return None
+
+
+def _convert_doc_to_docx(path: Path) -> Path | None:
+    office_binary = shutil.which("soffice") or shutil.which("libreoffice")
+    if not office_binary:
+        return None
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        target_dir = Path(temp_dir)
+        try:
+            result = subprocess.run(
+                [
+                    office_binary,
+                    "--headless",
+                    "--convert-to",
+                    "docx",
+                    "--outdir",
+                    str(target_dir),
+                    str(path),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError:
+            return None
+        if result.returncode != 0:
+            return None
+
+        converted_path = target_dir / f"{path.stem}.docx"
+        if not converted_path.exists():
+            return None
+
+        converted_bytes = converted_path.read_bytes()
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
+        temp_file.write(converted_bytes)
+        persistent_path = Path(temp_file.name)
+    try:
+        return persistent_path
+    except OSError:
+        return None
 
 
 def _scaled_image(path: Path, max_width: float, max_height: float):

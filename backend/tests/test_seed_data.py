@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core import seed as seed_module
-from app.core.seed import DEFAULT_ROLES, REPORTING_PERIOD_SPECS
+from app.core.seed import DEFAULT_ROLES, MANDATORY_EVENT_SPECS, REPORTING_PERIOD_SPECS
 from app.core.zimbabwe_academic_catalog import ZIMBABWE_ACADEMIC_INSTITUTION_SPECS
 from app.db.base import Base
 from app.models import (
@@ -43,7 +43,8 @@ def test_seed_data_bootstraps_reference_catalog_and_marketplace_fixture_accounts
         assert db.query(AcademicProgram).count() > 0
         assert db.query(ReportingPeriod).count() == len(REPORTING_PERIOD_SPECS)
         assert db.query(MandatoryProgram).count() > 0
-        assert db.query(MandatoryProgram).filter(MandatoryProgram.name == "Meeting").first() is not None
+        mandatory_event_names = {item.name for item in db.query(MandatoryProgram).all()}
+        assert {item["name"] for item in MANDATORY_EVENT_SPECS}.issubset(mandatory_event_names)
 
         assert db.query(Member).count() == 0
         assert db.query(Program).count() == 0

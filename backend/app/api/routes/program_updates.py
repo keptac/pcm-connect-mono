@@ -126,8 +126,19 @@ def _to_optional_text(value):
     return normalized or None
 
 
+def _normalize_reporting_date(reporting_date: date | None) -> date:
+    if not reporting_date:
+        raise HTTPException(status_code=400, detail="Reporting date is required")
+    return reporting_date
+
+
 def _is_meeting_event_name(event_name: str | None) -> bool:
     return (event_name or "").strip().lower() == "meeting"
+
+
+def _require_meeting_minutes(event_name: str | None, has_minutes: bool) -> None:
+    if _is_meeting_event_name(event_name) and not has_minutes:
+        raise HTTPException(status_code=400, detail="Meeting updates require uploaded minutes")
 
 
 def _parse_meeting_minutes_metadata(form) -> dict | None:
@@ -176,20 +187,6 @@ def _apply_meeting_minutes_metadata(attachments: list[dict], metadata: dict | No
     return updated_rows
 
 
-def _ensure_meeting_update_has_minutes(
-    event_name: str | None,
-    kept_attachments: list[dict] | None = None,
-    meeting_minutes_attachments: list[UploadFile] | None = None,
-) -> None:
-    if not _is_meeting_event_name(event_name):
-        return
-
-    has_existing_minutes = any(item.get("category") == "minutes" for item in kept_attachments or [])
-    has_new_minutes = bool(meeting_minutes_attachments)
-    if not has_existing_minutes and not has_new_minutes:
-        raise HTTPException(status_code=400, detail="Meeting updates require uploaded meeting minutes")
-
-
 async def _parse_payload_from_request(request: Request, patch: bool = False):
     content_type = request.headers.get("content-type", "")
     if "multipart/form-data" not in content_type:
@@ -220,6 +217,7 @@ async def _parse_payload_from_request(request: Request, patch: bool = False):
                 "event_name",
                 "event_detail",
                 "reporting_period",
+                "reporting_date",
                 "summary",
                 "outcomes",
                 "challenges",
@@ -246,6 +244,7 @@ async def _parse_payload_from_request(request: Request, patch: bool = False):
             "event_name": str(form.get("event_name") or ""),
             "event_detail": form.get("event_detail") or None,
             "reporting_period": str(form.get("reporting_period") or ""),
+            "reporting_date": form.get("reporting_date"),
             "summary": str(form.get("summary") or ""),
             "outcomes": form.get("outcomes") or None,
             "challenges": form.get("challenges") or None,
@@ -339,6 +338,7 @@ def _serialize(update: ProgramUpdate, request: Request) -> ProgramImpactUpdateRe
         event_name=update.event_name or update.title,
         event_detail=update.event_detail,
         reporting_period=update.reporting_period,
+        reporting_date=update.reporting_date,
         summary=update.summary,
         outcomes=update.outcomes,
         challenges=update.challenges,
@@ -364,8 +364,9 @@ def _build_updates_query(
         .options(
             selectinload(ProgramUpdate.program),
             selectinload(ProgramUpdate.university).selectinload(University.conference),
+            selectinload(ProgramUpdate.submitter),
         )
-        .order_by(ProgramUpdate.created_at.desc())
+        .order_by(ProgramUpdate.reporting_date.desc(), ProgramUpdate.created_at.desc())
     )
     if scoped_university_id:
         query = query.filter(ProgramUpdate.university_id == scoped_university_id)
@@ -382,6 +383,7 @@ def _get_update_with_relationships(db: Session, update_id: int) -> ProgramUpdate
         .options(
             selectinload(ProgramUpdate.program),
             selectinload(ProgramUpdate.university).selectinload(University.conference),
+            selectinload(ProgramUpdate.submitter),
         )
         .filter(ProgramUpdate.id == update_id)
         .first()
@@ -590,8 +592,9 @@ def download_single_report_pdf(
     pdf_bytes = build_program_update_pdf(update)
     file_label = (update.event_detail or update.event_name or update.title or f"update_{update.id}").strip().lower()
     safe_label = "".join(char if char.isalnum() else "_" for char in file_label).strip("_") or f"update_{update.id}"
+    filename_prefix = "meeting-minutes" if _is_meeting_event_name(update.event_name or update.title) else "impact-report"
     headers = {
-        "Content-Disposition": f'attachment; filename="impact-report_{safe_label}_{update.id}.pdf"'
+        "Content-Disposition": f'attachment; filename="{filename_prefix}_{safe_label}_{update.id}.pdf"'
     }
     return StreamingResponse(BytesIO(pdf_bytes), media_type="application/pdf", headers=headers)
 
@@ -611,9 +614,10 @@ async def create_update(
             raise HTTPException(status_code=400, detail="Ministry program does not belong to this university")
 
     event_name, event_detail, title = _normalize_event_fields(db, payload.event_name, payload.event_detail, payload.title)
+    _require_meeting_minutes(event_name, bool(meeting_minutes_attachments))
     payload_data = payload.model_dump(exclude={"university_id", "event_name", "event_detail", "title"})
     payload_data["reporting_period"] = _normalize_reporting_period(db, payload.reporting_period)
-    _ensure_meeting_update_has_minutes(event_name, meeting_minutes_attachments=meeting_minutes_attachments)
+    payload_data["reporting_date"] = _normalize_reporting_date(payload.reporting_date)
 
     saved_attachments = []
     if attachments:
@@ -679,6 +683,8 @@ async def update_program_update(
         updates.get("reporting_period", update.reporting_period),
         allow_inactive_selected=allow_inactive_reporting_period,
     )
+    if "reporting_date" in updates:
+        updates["reporting_date"] = _normalize_reporting_date(updates.get("reporting_date"))
 
     current_attachments = _load_attachments(update)
     if existing_attachments is None:
@@ -698,13 +704,16 @@ async def update_program_update(
         ]
 
     kept_attachments = _apply_meeting_minutes_metadata(kept_attachments, meeting_minutes_metadata)
-    _ensure_meeting_update_has_minutes(event_name, kept_attachments=kept_attachments, meeting_minutes_attachments=meeting_minutes_attachments)
     _delete_attachment_files(removed_attachments)
 
     if attachments:
         kept_attachments.extend(await _save_attachments(attachments))
     if meeting_minutes_attachments:
         kept_attachments.extend(await _save_attachments(meeting_minutes_attachments, metadata=meeting_minutes_metadata))
+    _require_meeting_minutes(
+        event_name,
+        any(item.get("category") == "minutes" for item in kept_attachments),
+    )
     updates["attachments_json"] = json.dumps(kept_attachments) if kept_attachments else None
 
     for key, value in updates.items():

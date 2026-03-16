@@ -108,7 +108,7 @@ const navItems = [
     label: "Funding",
     to: "/funding",
     description: "Income and expenses",
-    roles: ["super_admin", "student_admin", "secretary", "alumni_admin", "finance_officer", "students_finance", "executive", "director"]
+    roles: ["super_admin", "student_admin", "alumni_admin", "finance_officer", "students_finance", "executive", "director"]
   },
   {
     label: "Universities",
@@ -120,7 +120,7 @@ const navItems = [
     label: "Team",
     to: "/team",
     description: "User accounts",
-    roles: ["super_admin", "student_admin", "secretary", "alumni_admin", "service_recovery"]
+    roles: ["super_admin", "student_admin", "alumni_admin", "service_recovery"]
   },
   {
     label: "Admin",
@@ -171,7 +171,7 @@ export default function DashboardLayout() {
   const location = useLocation();
   const token = localStorage.getItem("pcm_access_token");
   const { setUser, setActiveUniversityId } = useAuthStore();
-  const { user, roles, isSuperAdmin, scopedUniversityId } = useUniversityScope();
+  const { user, roles, isSuperAdmin, canSelectUniversity, scopedUniversityId } = useUniversityScope();
   const canViewMessages = roles.some((role) => networkRoles.includes(role));
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -407,7 +407,7 @@ export default function DashboardLayout() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            {!mustChangePassword && isSuperAdmin ? (
+            {!mustChangePassword && canSelectUniversity ? (
               <label className="field-shell min-w-[220px]">
                 <span className="field-label">University / campus scope</span>
                 <select
