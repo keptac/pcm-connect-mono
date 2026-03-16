@@ -64,7 +64,6 @@ export function usePagination<T>(items: T[] | undefined, initialPageSize = TABLE
 export function PageHeader({
   eyebrow,
   title,
-  description,
   actions
 }: {
   eyebrow: string;
@@ -77,7 +76,6 @@ export function PageHeader({
       <div className="space-y-2">
         <p className="eyebrow">{eyebrow}</p>
         <h1 className="display-title">{title}</h1>
-        {description ? <p className="max-w-2xl text-sm text-slate-600">{description}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-3">{actions}</div> : null}
     </div>
@@ -97,8 +95,7 @@ export function Panel({
 export function MetricCard({
   label,
   value,
-  tone = "forest",
-  helper
+  tone = "forest"
 }: {
   label: string;
   value: ReactNode;
@@ -109,7 +106,6 @@ export function MetricCard({
     <div className={joinClasses("metric-card", `metric-${tone}`)}>
       <p className="metric-label">{label}</p>
       <p className="metric-value">{value}</p>
-      {helper ? <div className="metric-helper">{helper}</div> : null}
     </div>
   );
 }
@@ -186,16 +182,14 @@ export function TableActionButton({
 }
 
 export function EmptyState({
-  title,
-  description
+  title
 }: {
   title: string;
-  description: string;
+  description?: string;
 }) {
   return (
     <div className="rounded-[12px] border border-dashed border-slate-300/80 bg-white/60 px-6 py-10 text-center">
       <h3 className="text-lg font-semibold text-slate-800">{title}</h3>
-      <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">{description}</p>
     </div>
   );
 }

@@ -42,6 +42,7 @@ class UniversityUpdate(SchemaModel):
 
 class UniversityRead(UniversityBase):
     id: int
+    union_id: Optional[int] = None
     conference_name: Optional[str] = None
     union_name: Optional[str] = None
     created_at: datetime
@@ -49,9 +50,29 @@ class UniversityRead(UniversityBase):
     member_count: int = 0
 
 
+class UnionBase(SchemaModel):
+    name: str
+    is_active: bool = True
+
+
+class UnionCreate(UnionBase):
+    pass
+
+
+class UnionUpdate(SchemaModel):
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class UnionRead(UnionBase):
+    id: int
+    conference_count: int = 0
+    created_at: datetime
+
+
 class ConferenceBase(SchemaModel):
     name: str
-    union_name: str
+    union_id: int
     is_active: bool = True
 
 
@@ -61,12 +82,13 @@ class ConferenceCreate(ConferenceBase):
 
 class ConferenceUpdate(SchemaModel):
     name: Optional[str] = None
-    union_name: Optional[str] = None
+    union_id: Optional[int] = None
     is_active: Optional[bool] = None
 
 
 class ConferenceRead(ConferenceBase):
     id: int
+    union_name: Optional[str] = None
     campus_count: int = 0
     created_at: datetime
 

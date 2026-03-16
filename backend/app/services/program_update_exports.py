@@ -71,6 +71,7 @@ PDF_FONT_NAMES = {
 PDF_FONT_REGISTRATION_ATTEMPTED = False
 OCR_ENGINE = None
 OCR_ENGINE_ATTEMPTED = False
+WORDPROCESSING_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
 
 def build_program_update_report_pack(updates: list[ProgramUpdate]) -> bytes:
@@ -378,6 +379,52 @@ def _build_styles():
             fontSize=9,
             leading=13,
             textColor=colors.HexColor("#243446"),
+        ),
+        "minutesParagraph": ParagraphStyle(
+            "minutesParagraph",
+            parent=sample["BodyText"],
+            fontName=fonts["regular"],
+            fontSize=9.5,
+            leading=14,
+            textColor=colors.HexColor("#243446"),
+            spaceAfter=4,
+        ),
+        "minutesHeading": ParagraphStyle(
+            "minutesHeading",
+            parent=sample["Heading3"],
+            fontName=fonts["bold"],
+            fontSize=11.5,
+            leading=15,
+            textColor=PCM_BLUE,
+            spaceBefore=2,
+            spaceAfter=5,
+        ),
+        "minutesBullet": ParagraphStyle(
+            "minutesBullet",
+            parent=sample["BodyText"],
+            fontName=fonts["regular"],
+            fontSize=9.5,
+            leading=14,
+            textColor=colors.HexColor("#243446"),
+            leftIndent=14,
+            bulletIndent=2,
+            spaceAfter=3,
+        ),
+        "minutesTableCell": ParagraphStyle(
+            "minutesTableCell",
+            parent=sample["BodyText"],
+            fontName=fonts["regular"],
+            fontSize=8.8,
+            leading=12,
+            textColor=colors.HexColor("#243446"),
+        ),
+        "minutesTableHeader": ParagraphStyle(
+            "minutesTableHeader",
+            parent=sample["BodyText"],
+            fontName=fonts["bold"],
+            fontSize=8.8,
+            leading=12,
+            textColor=PCM_BLUE,
         ),
         "valueRight": ParagraphStyle(
             "valueRight",
@@ -1504,13 +1551,16 @@ def _build_meeting_minutes_content(update: ProgramUpdate, styles, minute_documen
             )
         )
         content.append(Spacer(1, 6))
-        for page_number, page_text in enumerate(document.get("pages") or [], start=1):
-            if page_number > 1:
-                content.append(Spacer(1, 8))
-            content.append(Paragraph(f"Source page {page_number}", styles["tableLabel"]))
-            content.append(Spacer(1, 4))
-            content.extend(_build_meeting_minutes_text_blocks(page_text, styles))
-            content.append(Spacer(1, 10))
+        if document.get("blocks"):
+            content.extend(_build_meeting_minutes_structured_blocks(document["blocks"], styles))
+        else:
+            for page_number, page_text in enumerate(document.get("pages") or [], start=1):
+                if page_number > 1:
+                    content.append(Spacer(1, 8))
+                content.append(Paragraph(f"Source page {page_number}", styles["tableLabel"]))
+                content.append(Spacer(1, 4))
+                content.extend(_build_meeting_minutes_text_blocks(page_text, styles))
+                content.append(Spacer(1, 10))
         if index < len(minute_documents) - 1:
             content.append(PageBreak())
     return content
@@ -1529,9 +1579,120 @@ def _build_meeting_minutes_text_blocks(text: str, styles):
     ]
 
 
+def _build_meeting_minutes_structured_blocks(blocks: list[dict], styles):
+    flowables = []
+    for block in blocks:
+        built = _build_meeting_minutes_structured_block(block, styles)
+        if not built:
+            continue
+        if isinstance(built, list):
+            flowables.extend(built)
+        else:
+            flowables.append(built)
+    return flowables
+
+
+def _build_meeting_minutes_structured_block(block: dict, styles):
+    block_type = block.get("type")
+    if block_type == "heading":
+        return [Paragraph(block["markup"], styles["minutesHeading"]), Spacer(1, 1)]
+    if block_type == "bullet":
+        return [
+            Paragraph(
+                block["markup"],
+                _minutes_bullet_style(styles, block.get("level", 0)),
+                bulletText="•",
+            )
+        ]
+    if block_type == "table":
+        return [_build_meeting_minutes_table(block, styles), Spacer(1, 8)]
+    if block_type == "spacer":
+        return [Spacer(1, 6)]
+    if block_type == "paragraph":
+        return [Paragraph(block["markup"], styles["minutesParagraph"])]
+    return None
+
+
+def _minutes_bullet_style(styles, level: int):
+    level = max(int(level or 0), 0)
+    base = styles["minutesBullet"]
+    return ParagraphStyle(
+        f"minutesBulletLevel{level}",
+        parent=base,
+        leftIndent=base.leftIndent + (level * 11),
+        bulletIndent=base.bulletIndent + (level * 11),
+    )
+
+
+def _build_meeting_minutes_table(block: dict, styles):
+    rows = _normalize_minutes_table_rows(block.get("rows") or [])
+    if not rows:
+        return Spacer(1, 0)
+
+    column_count = len(rows[0])
+    table_rows = []
+    has_header = bool(block.get("header"))
+    for row_index, row in enumerate(rows):
+        cells = []
+        for cell in row:
+            paragraph_style = styles["minutesTableHeader"] if has_header and row_index == 0 else styles["minutesTableCell"]
+            cells.append(Paragraph(cell["markup"], paragraph_style))
+        table_rows.append(cells)
+
+    column_width = CONTENT_WIDTH / max(column_count, 1)
+    table = Table(
+        table_rows,
+        colWidths=[column_width] * column_count,
+        repeatRows=1 if has_header else 0,
+        splitByRow=1,
+        hAlign="LEFT",
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 0.8, PCM_BORDER),
+                ("INNERGRID", (0, 0), (-1, -1), 0.6, PCM_BORDER),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F3F7FF") if has_header else colors.white),
+            ]
+        )
+    )
+    return table
+
+
+def _normalize_minutes_table_rows(rows: list[list[dict]]) -> list[list[dict]]:
+    if not rows:
+        return []
+
+    column_count = max(len(row) for row in rows)
+    normalized_rows = []
+    for row in rows:
+        normalized = list(row)
+        while len(normalized) < column_count:
+            normalized.append({"markup": "&nbsp;", "has_bold": False})
+        normalized_rows.append(normalized)
+    return normalized_rows
+
+
 def _extract_meeting_minutes_documents(update: ProgramUpdate) -> list[dict]:
     documents = []
     for attachment in _resolve_minutes_attachments(update):
+        path = attachment["path"]
+        suffix = path.suffix.lower()
+        blocks = []
+        if suffix == ".docx" or _looks_like_docx(path):
+            blocks = _extract_docx_blocks(path)
+        elif suffix == ".doc":
+            blocks = _extract_doc_blocks(path)
+
+        if blocks:
+            documents.append({**attachment, "blocks": blocks})
+            continue
+
         pages = _extract_minutes_attachment_pages(attachment)
         documents.append({**attachment, "pages": pages})
     return documents
@@ -1617,6 +1778,31 @@ def _extract_pdf_ocr_pages(path: Path) -> list[str]:
     return pages
 
 
+def _extract_docx_blocks(path: Path) -> list[dict]:
+    try:
+        with ZipFile(path) as archive:
+            xml_bytes = archive.read("word/document.xml")
+    except (KeyError, BadZipFile):
+        return []
+
+    root = ElementTree.fromstring(xml_bytes)
+    body = root.find(f"{WORDPROCESSING_NS}body")
+    if body is None:
+        return []
+
+    blocks = []
+    for child in body:
+        if child.tag == f"{WORDPROCESSING_NS}p":
+            block = _extract_docx_paragraph_block(child)
+        elif child.tag == f"{WORDPROCESSING_NS}tbl":
+            block = _extract_docx_table_block(child)
+        else:
+            block = None
+        if block:
+            blocks.append(block)
+    return blocks
+
+
 def _extract_docx_pages(path: Path) -> list[str]:
     try:
         with ZipFile(path) as archive:
@@ -1634,6 +1820,19 @@ def _extract_docx_pages(path: Path) -> list[str]:
     return _chunk_minutes_paragraphs(paragraphs)
 
 
+def _extract_doc_blocks(path: Path) -> list[dict]:
+    if not (shutil.which("soffice") or shutil.which("libreoffice")):
+        return []
+
+    converted_docx = _convert_doc_to_docx(path)
+    if converted_docx is None:
+        return []
+    try:
+        return _extract_docx_blocks(converted_docx)
+    finally:
+        _cleanup_temp_path(converted_docx)
+
+
 def _extract_doc_pages(path: Path) -> list[str]:
     extracted_text = _run_legacy_doc_extractor(path)
     if extracted_text:
@@ -1642,8 +1841,141 @@ def _extract_doc_pages(path: Path) -> list[str]:
     if shutil.which("soffice") or shutil.which("libreoffice"):
         converted_docx = _convert_doc_to_docx(path)
         if converted_docx is not None:
-            return _extract_docx_pages(converted_docx)
+            try:
+                return _extract_docx_pages(converted_docx)
+            finally:
+                _cleanup_temp_path(converted_docx)
     return []
+
+
+def _extract_docx_paragraph_block(paragraph) -> dict | None:
+    fragments = _docx_paragraph_fragments(paragraph)
+    plain_text = "".join(fragment["text"] for fragment in fragments).strip()
+    if not plain_text:
+        return {"type": "spacer"}
+
+    markup = _docx_fragments_to_markup(fragments)
+    if not markup:
+        return {"type": "spacer"}
+
+    list_level = _docx_list_level(paragraph)
+    if list_level is not None:
+        return {"type": "bullet", "level": list_level, "markup": markup}
+    if _docx_paragraph_is_heading(paragraph, fragments, plain_text):
+        return {"type": "heading", "markup": markup}
+    return {"type": "paragraph", "markup": markup}
+
+
+def _docx_paragraph_fragments(paragraph) -> list[dict]:
+    fragments: list[dict] = []
+    for child in paragraph:
+        if child.tag == f"{WORDPROCESSING_NS}r":
+            _append_docx_run_fragments(fragments, child)
+        elif child.tag == f"{WORDPROCESSING_NS}hyperlink":
+            for run in child.findall(f"{WORDPROCESSING_NS}r"):
+                _append_docx_run_fragments(fragments, run)
+    return fragments
+
+
+def _append_docx_run_fragments(fragments: list[dict], run) -> None:
+    text_parts = []
+    for node in run:
+        if node.tag == f"{WORDPROCESSING_NS}t":
+            text_parts.append(node.text or "")
+        elif node.tag == f"{WORDPROCESSING_NS}tab":
+            text_parts.append("\t")
+        elif node.tag in {f"{WORDPROCESSING_NS}br", f"{WORDPROCESSING_NS}cr"}:
+            text_parts.append("\n")
+    text = "".join(text_parts)
+    if not text:
+        return
+
+    is_bold = run.find(f"{WORDPROCESSING_NS}rPr/{WORDPROCESSING_NS}b") is not None or run.find(
+        f"{WORDPROCESSING_NS}rPr/{WORDPROCESSING_NS}bCs"
+    ) is not None
+    if fragments and fragments[-1]["bold"] == is_bold:
+        fragments[-1]["text"] += text
+    else:
+        fragments.append({"text": text, "bold": is_bold})
+
+
+def _docx_list_level(paragraph) -> int | None:
+    level = paragraph.find(f"{WORDPROCESSING_NS}pPr/{WORDPROCESSING_NS}numPr/{WORDPROCESSING_NS}ilvl")
+    if level is None:
+        return None
+    try:
+        return int(level.get(f"{WORDPROCESSING_NS}val") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _docx_paragraph_is_heading(paragraph, fragments: list[dict], plain_text: str) -> bool:
+    style_id = _docx_paragraph_style_id(paragraph)
+    if style_id and any(token in style_id.lower() for token in ("heading", "title", "subtitle")):
+        return True
+    if len(plain_text) > 120:
+        return False
+    bold_fragments = [fragment for fragment in fragments if fragment["text"].strip()]
+    return bool(bold_fragments) and all(fragment["bold"] for fragment in bold_fragments)
+
+
+def _docx_paragraph_style_id(paragraph) -> str | None:
+    style = paragraph.find(f"{WORDPROCESSING_NS}pPr/{WORDPROCESSING_NS}pStyle")
+    if style is None:
+        return None
+    return style.get(f"{WORDPROCESSING_NS}val")
+
+
+def _docx_fragments_to_markup(fragments: list[dict]) -> str:
+    markup_parts = []
+    for fragment in fragments:
+        if not fragment["text"]:
+            continue
+        escaped_text = _escape_minutes_markup_text(fragment["text"])
+        if fragment["bold"]:
+            markup_parts.append(f"<b>{escaped_text}</b>")
+        else:
+            markup_parts.append(escaped_text)
+    return "".join(markup_parts).strip()
+
+
+def _escape_minutes_markup_text(value: str) -> str:
+    escaped_value = escape(value.replace("\t", "    "))
+    while "  " in escaped_value:
+        escaped_value = escaped_value.replace("  ", "&nbsp; ")
+    return escaped_value.replace("\n", "<br/>")
+
+
+def _extract_docx_table_block(table) -> dict | None:
+    rows = []
+    for row in table.findall(f"{WORDPROCESSING_NS}tr"):
+        cells = []
+        for cell in row.findall(f"{WORDPROCESSING_NS}tc"):
+            markup, has_bold = _extract_docx_cell_markup(cell)
+            cells.append({"markup": markup or "&nbsp;", "has_bold": has_bold})
+        if any(cell["markup"].strip() != "&nbsp;" for cell in cells):
+            rows.append(cells)
+    if not rows:
+        return None
+
+    first_row = rows[0]
+    header_cells = [cell for cell in first_row if cell["markup"].strip() != "&nbsp;"]
+    header = bool(header_cells) and all(cell["has_bold"] for cell in header_cells)
+    return {"type": "table", "rows": rows, "header": header}
+
+
+def _extract_docx_cell_markup(cell) -> tuple[str, bool]:
+    paragraphs = []
+    has_bold = False
+    for paragraph in cell.findall(f"{WORDPROCESSING_NS}p"):
+        fragments = _docx_paragraph_fragments(paragraph)
+        if not fragments:
+            continue
+        markup = _docx_fragments_to_markup(fragments)
+        if markup:
+            paragraphs.append(markup)
+            has_bold = has_bold or any(fragment["bold"] for fragment in fragments if fragment["text"].strip())
+    return "<br/><br/>".join(paragraphs), has_bold
 
 
 def _chunk_minutes_paragraphs(paragraphs: list[str], char_limit: int = 2800) -> list[str]:
@@ -1820,6 +2152,15 @@ def _convert_doc_to_docx(path: Path) -> Path | None:
         return persistent_path
     except OSError:
         return None
+
+
+def _cleanup_temp_path(path: Path | None) -> None:
+    if path is None:
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _scaled_image(path: Path, max_width: float, max_height: float):

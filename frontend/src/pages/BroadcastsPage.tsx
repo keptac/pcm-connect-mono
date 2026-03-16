@@ -44,7 +44,7 @@ function badgeTone(value?: string | null): "success" | "warning" | "danger" | "i
   return "neutral";
 }
 
-export default function BroadcastsPage() {
+export default function BroadcastsPage({ embedded = false }: { embedded?: boolean }) {
   const client = useQueryClient();
   const { user, roles, canSelectUniversity, scopedUniversityId, defaultUniversityId } = useUniversityScope();
   const canView = roles.some((role) => ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director"].includes(role));
@@ -107,6 +107,11 @@ export default function BroadcastsPage() {
   const targetReach = (broadcasts || []).reduce((total: number, broadcast: any) => total + (broadcast.invites?.length || 0), 0);
   const lockedUniversityName =
     universities?.find((university: any) => university.id === Number(form.university_id || defaultUniversityId))?.name || "Your university or campus";
+  const headerActions = canManage ? (
+    <button className="primary-button" type="button" onClick={openCreateForm}>
+      Create broadcast
+    </button>
+  ) : null;
 
   function resetForm() {
     setSelectedId(null);
@@ -170,17 +175,22 @@ export default function BroadcastsPage() {
   }
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        eyebrow="Network programming"
-        title="Broadcasts"
-        description="Universities can broadcast major ministry programs and events, invite selected campuses, and let the wider PCM network see shared opportunities and campus-led gatherings."
-        actions={(
-          <button className="primary-button" type="button" onClick={openCreateForm}>
-            Create broadcast
-          </button>
-        )}
-      />
+    <div className={embedded ? "space-y-6" : "space-y-8"}>
+      {embedded ? (
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            {/* <p className="mt-2 text-sm text-slate-600">Universities can broadcast major ministry programs and events, invite selected campuses, and keep the wider PCM network aware of shared opportunities.</p> */}
+          </div>
+          {headerActions}
+        </div>
+      ) : (
+        <PageHeader
+          eyebrow="Network programming"
+          title="Broadcasts"
+          description="Universities can broadcast major ministry programs and events, invite selected campuses, and let the wider PCM network see shared opportunities and campus-led gatherings."
+          actions={headerActions}
+        />
+      )}
 
       <div className="grid gap-4 xl:grid-cols-4">
         <MetricCard label="Visible broadcasts" value={formatNumber(broadcasts?.length)} helper="All open programming in your current scope" />

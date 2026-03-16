@@ -4,6 +4,7 @@ import sys
 from datetime import date
 from io import BytesIO
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 from pypdf import PdfReader
@@ -26,6 +27,7 @@ from app.services.program_update_exports import (
     _build_detailed_metric_items,
     _build_styles,
     _extract_doc_pages,
+    _extract_docx_blocks,
     _extract_pdf_pages,
     _volunteer_helper_text,
     build_program_update_pdf,
@@ -351,6 +353,100 @@ def test_meeting_download_handles_long_minutes_content_without_layout_error(db_s
     assert len(reader.pages) >= 3
     assert "Meeting Minutes" in extracted_text
     assert "Agenda item and discussion notes" in extracted_text
+
+
+def test_extract_docx_blocks_preserve_headings_bullets_and_tables(tmp_path: Path):
+    docx_path = tmp_path / "minutes-structured.docx"
+    document_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
+      <w:r><w:rPr><w:b/></w:rPr><w:t>Action Points</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:pPr><w:numPr><w:ilvl w:val="1"/></w:numPr></w:pPr>
+      <w:r><w:t>Review previous minutes</w:t></w:r>
+    </w:p>
+    <w:tbl>
+      <w:tr>
+        <w:tc><w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Item</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Owner</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Prayer roster</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Secretary</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+  </w:body>
+</w:document>
+"""
+    with ZipFile(docx_path, "w") as archive:
+        archive.writestr("word/document.xml", document_xml)
+
+    blocks = _extract_docx_blocks(docx_path)
+
+    assert blocks[0]["type"] == "heading"
+    assert "<b>Action Points</b>" in blocks[0]["markup"]
+    assert blocks[1]["type"] == "bullet"
+    assert blocks[1]["level"] == 1
+    assert "Review previous minutes" in blocks[1]["markup"]
+    assert blocks[2]["type"] == "table"
+    assert blocks[2]["header"] is True
+    assert "Prayer roster" in blocks[2]["rows"][1][0]["markup"]
+    assert "Secretary" in blocks[2]["rows"][1][1]["markup"]
+
+
+def test_meeting_download_renders_structured_minutes_blocks(db_session: Session, monkeypatch):
+    conference = Conference(name="North Zimbabwe Conference", union_name="ZUC")
+    university = University(name="PCM Office", conference=conference)
+    submitter = User(email="secretary@example.com", name="Campus Secretary", password_hash="hashed")
+    db_session.add_all([conference, university, submitter])
+    db_session.flush()
+
+    update = ProgramUpdate(
+        university=university,
+        title="Meeting",
+        event_name="Meeting",
+        reporting_period="2026-Q1",
+        reporting_date=date(2026, 3, 14),
+        summary="Monthly executive meeting minutes.",
+        submitted_by=submitter.id,
+    )
+    db_session.add(update)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        "app.services.program_update_exports._extract_meeting_minutes_documents",
+        lambda update: [
+            {
+                "name": "minutes-march.docx",
+                "meeting_date": "2026-03-14",
+                "venue": "PCM Office Boardroom",
+                "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "blocks": [
+                    {"type": "heading", "markup": "<b>Action Points</b>"},
+                    {"type": "bullet", "level": 1, "markup": "Review previous minutes"},
+                    {
+                        "type": "table",
+                        "header": True,
+                        "rows": [
+                            [{"markup": "<b>Item</b>", "has_bold": True}, {"markup": "<b>Owner</b>", "has_bold": True}],
+                            [{"markup": "Prayer roster", "has_bold": False}, {"markup": "Secretary", "has_bold": False}],
+                        ],
+                    },
+                ],
+            }
+        ],
+    )
+
+    pdf_bytes = build_program_update_pdf(update)
+    extracted_text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_bytes)).pages)
+
+    assert "Action Points" in extracted_text
+    assert "Review previous minutes" in extracted_text
+    assert "Prayer roster" in extracted_text
+    assert "Secretary" in extracted_text
 
 
 def test_extract_pdf_pages_uses_ocr_when_embedded_text_is_missing(monkeypatch):

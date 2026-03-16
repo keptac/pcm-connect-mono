@@ -7,6 +7,7 @@ import pcmLogo from "../images/pcm_logo.png";
 import { canAccessAlumniConnect } from "../lib/alumniConnectAccess";
 import { APP_VERSION } from "../lib/appVersion";
 import { bootstrapChatKeys, clearSessionWrappingKey, rotateChatWrappingPassword } from "../lib/chatCrypto";
+import { clearAuthSession } from "../lib/session";
 import { useUniversityScope } from "../lib/universityScope";
 import { useAuthStore } from "../store/auth";
 
@@ -24,17 +25,15 @@ const navDisplayOrder = new Map([
   ["Mission Reports", 1],
   ["Ministry programs", 2],
   ["Funding", 3],
-  ["Calendar", 4],
-  ["Marketplace", 5],
-  ["My profile", 6],
-  ["People", 7],
-  ["Alumni connect", 8],
-  ["Messages", 9],
-  ["Broadcasts", 10],
-  ["Mission reports", 11],
-  ["Universities", 12],
-  ["Team", 13],
-  ["Admin", 14]
+  ["Marketplace", 4],
+  ["My profile", 5],
+  ["People", 6],
+  ["Alumni connect", 7],
+  ["Messages", 8],
+  ["Mission reports", 9],
+  ["Universities", 10],
+  ["Team", 11],
+  ["Admin", 12]
 ]);
 
 const navItems = [
@@ -72,19 +71,7 @@ const navItems = [
     label: "Ministry programs",
     to: "/programs",
     description: "Ministry portfolio",
-    roles: ["super_admin", "student_admin", "secretary", "program_manager", "committee_member", "executive", "director", "alumni_admin"]
-  },
-  {
-    label: "Calendar",
-    to: "/calendar",
-    description: "Events and dates",
     roles: ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin"]
-  },
-  {
-    label: "Broadcasts",
-    to: "/broadcasts",
-    description: "Shared invitations",
-    roles: ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director"]
   },
   {
     label: "Messages",
@@ -256,14 +243,9 @@ export default function DashboardLayout() {
   useEffect(() => {
     const status = (meQuery.error as any)?.response?.status;
     if (meQuery.isError && meQuery.isFetchedAfterMount && (status === 401 || status === 403)) {
-      localStorage.removeItem("pcm_access_token");
-      localStorage.removeItem("pcm_refresh_token");
-      clearSessionWrappingKey();
-      setUser(null);
-      queryClient.clear();
-      navigate("/login", { replace: true });
+      clearAuthSession({ redirectToLogin: true });
     }
-  }, [meQuery.error, meQuery.isError, meQuery.isFetchedAfterMount, navigate, queryClient, setUser]);
+  }, [meQuery.error, meQuery.isError, meQuery.isFetchedAfterMount]);
 
   if (!token || !user) return null;
 
@@ -331,7 +313,6 @@ export default function DashboardLayout() {
               </div>
               <div>
                 <h2 className="sidebar-brand-title text-xl font-semibold text-slate-900">PCM Connect</h2>
-                <p className="sidebar-brand-subtitle mt-1 text-xs uppercase tracking-[0.22em] text-slate-500">Campus mission management</p>
                 <p className="sidebar-version mt-2">Version {APP_VERSION}</p>
               </div>
             </div>
@@ -360,7 +341,6 @@ export default function DashboardLayout() {
                   ) : null}
                   <span className="sidebar-nav-label font-semibold text-slate-900">{item.label}</span>
                 </div>
-                <span className="sidebar-nav-description text-slate-500">{item.description}</span>
               </NavLink>
             ))}
           </nav>
@@ -373,12 +353,7 @@ export default function DashboardLayout() {
           <button
             className="mt-5 inline-flex w-full items-center justify-center rounded-[12px] border border-white/15 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10"
             onClick={() => {
-              localStorage.removeItem("pcm_access_token");
-              localStorage.removeItem("pcm_refresh_token");
-              clearSessionWrappingKey();
-              setUser(null);
-              queryClient.clear();
-              navigate("/login", { replace: true });
+              clearAuthSession({ redirectToLogin: true });
             }}
           >
             Sign out
@@ -400,7 +375,6 @@ export default function DashboardLayout() {
             </button>
 
             <div>
-              <p className="eyebrow">Mission control</p>
               <h2 className="text-2xl font-semibold text-slate-950">
                 {mustChangePassword && !activeHelpItem ? "Password reset required" : activeItem?.label || activeHelpItem?.label || "Operations"}
               </h2>

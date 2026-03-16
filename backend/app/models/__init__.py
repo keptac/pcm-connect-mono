@@ -1,5 +1,6 @@
 from .user import User
 from .role import Role, UserRole
+from .union import Union
 from .conference import Conference
 from .university import University
 from .program import Program
@@ -21,6 +22,7 @@ __all__ = [
     "User",
     "Role",
     "UserRole",
+    "Union",
     "Conference",
     "University",
     "Program",

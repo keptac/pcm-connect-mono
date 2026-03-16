@@ -393,10 +393,10 @@ export default function MessagesPage() {
                 <h3 className="text-2xl font-semibold text-slate-950">
                   {hasKeyBundle(keyBundleQuery.data) ? "Unlock secure chat on this device" : "Activate secure chat"}
                 </h3>
-                <p className="max-w-xl text-sm leading-7 text-slate-600">
+                <p className="max-w-xl text-sm text-slate-600">
                   {hasKeyBundle(keyBundleQuery.data)
-                    ? "Use your account password to decrypt your message key and read private conversations on this browser."
-                    : "Your first secure-chat login will generate a public and private key pair in the browser, then store only the encrypted private key on the server."}
+                    ? "Enter your password to unlock messages."
+                    : "Set up secure chat on this device."}
                 </p>
               </div>
 

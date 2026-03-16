@@ -5,8 +5,6 @@ import AdminPage from "./pages/AdminPage";
 import AboutPage from "./pages/AboutPage";
 import AlumniConnectPage from "./pages/AlumniConnectPage";
 import AuditLogsPage from "./pages/AuditLogsPage";
-import BroadcastsPage from "./pages/BroadcastsPage";
-import CalendarPage from "./pages/CalendarPage";
 import FundingPage from "./pages/FundingPage";
 import LoginPage from "./pages/LoginPage";
 import MarketplacePage from "./pages/MarketplacePage";
@@ -46,8 +44,8 @@ export default function App() {
         <Route path="my-profile" element={<MyProfilePage />} />
         <Route path="marketplace" element={<MarketplacePage />} />
         <Route path="programs" element={<ProgramsPage />} />
-        <Route path="calendar" element={<CalendarPage />} />
-        <Route path="broadcasts" element={<BroadcastsPage />} />
+        <Route path="calendar" element={<Navigate to="/programs?view=calendar" replace />} />
+        <Route path="broadcasts" element={<Navigate to="/programs?view=broadcasts" replace />} />
         <Route path="messages" element={<MessagesPage />} />
         <Route path="mission-reports" element={<MissionReportsPage />} />
         <Route path="updates" element={<UpdatesPage />} />

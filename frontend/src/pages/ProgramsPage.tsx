@@ -1,15 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 
 import { mandatoryProgramsApi, programUpdatesApi, programsApi, reportingPeriodsApi, universitiesApi } from "../api/endpoints";
 import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatCurrency, formatDate, formatNumber } from "../lib/format";
 import { useUniversityScope } from "../lib/universityScope";
+import BroadcastsPage from "./BroadcastsPage";
+import CalendarPage from "./CalendarPage";
 
 const NETWORK_SCOPE = "network";
 const NETWORK_LABEL = "All universities and campuses";
 const audienceOptions = ["Students", "Alumni", "Students and Alumni"];
+const portfolioRoles = ["super_admin", "student_admin", "secretary", "program_manager", "committee_member", "executive", "director", "alumni_admin"];
+const broadcastRoles = ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director"];
+const calendarRoles = ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin"];
+
+type ProgramsView = "portfolio" | "broadcasts" | "calendar" | "coverage";
 
 function normalizeProgramName(value?: string | null) {
   return String(value || "").trim().toLowerCase();
@@ -109,44 +117,59 @@ function isProgramDeleteLocked(program: any, updateCount: number) {
 
 export default function ProgramsPage() {
   const client = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, roles, canSelectUniversity, scopedUniversityId, defaultUniversityId } = useUniversityScope();
-  const canManage = roles.some((role) => ["super_admin", "student_admin", "secretary", "program_manager", "committee_member", "executive", "director", "alumni_admin"].includes(role));
+  const canViewPortfolio = roles.some((role) => portfolioRoles.includes(role));
+  const canViewBroadcasts = roles.some((role) => broadcastRoles.includes(role));
+  const canViewCalendar = roles.some((role) => calendarRoles.includes(role));
+  const canManage = canViewPortfolio;
   const isAlumniAdmin = roles.includes("alumni_admin");
   const defaultProgramAudience = isAlumniAdmin ? "Alumni" : "Students";
   const hasGlobalAccess = Boolean(user) && !user.university_id;
+  const canViewCoverage = canViewPortfolio && hasGlobalAccess;
   const canSelectProgramScope = canSelectUniversity || hasGlobalAccess;
+  const viewOptions = useMemo<Array<{ key: ProgramsView; label: string }>>(() => {
+    const options: Array<{ key: ProgramsView; label: string }> = [];
+    if (canViewPortfolio) options.push({ key: "portfolio", label: "Portfolio" });
+    if (canViewBroadcasts) options.push({ key: "broadcasts", label: "Broadcasts" });
+    if (canViewCalendar) options.push({ key: "calendar", label: "Programming calendar" });
+    if (canViewCoverage) options.push({ key: "coverage", label: "Mandatory coverage" });
+    return options;
+  }, [canViewBroadcasts, canViewCalendar, canViewCoverage, canViewPortfolio]);
+  const defaultView = viewOptions[0]?.key ?? "portfolio";
+  const requestedView = searchParams.get("view") as ProgramsView | null;
+  const activeView = viewOptions.some((option) => option.key === requestedView) ? (requestedView as ProgramsView) : defaultView;
 
   const { data: programs } = useQuery({
     queryKey: ["programs", scopedUniversityId],
     queryFn: () => programsApi.list(scopedUniversityId),
-    enabled: canManage
+    enabled: canViewPortfolio || canViewBroadcasts || canViewCalendar
   });
   const { data: universities } = useQuery({
     queryKey: ["universities"],
     queryFn: universitiesApi.list,
-    enabled: canManage
+    enabled: canViewPortfolio || canViewBroadcasts || canViewCoverage
   });
   const { data: mandatoryPrograms } = useQuery({
     queryKey: ["mandatory-programs", "event"],
     queryFn: () => mandatoryProgramsApi.list({ programType: "event" }),
-    enabled: canManage && hasGlobalAccess
+    enabled: canViewCoverage
   });
   const { data: reportingPeriods } = useQuery({
     queryKey: ["reporting-periods", true],
     queryFn: () => reportingPeriodsApi.list(true),
-    enabled: canManage && hasGlobalAccess
+    enabled: canViewCoverage
   });
   const { data: updates } = useQuery({
     queryKey: ["program-updates", scopedUniversityId],
     queryFn: () => programUpdatesApi.list({ universityId: scopedUniversityId }),
-    enabled: canManage
+    enabled: canViewPortfolio
   });
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [form, setForm] = useState(() => buildInitialForm(defaultUniversityId, defaultProgramAudience));
   const [statusFilter, setStatusFilter] = useState("all");
-  const [activeView, setActiveView] = useState<"portfolio" | "coverage">("portfolio");
   const [coveragePeriod, setCoveragePeriod] = useState(currentReportingPeriod);
 
   const filteredPrograms = useMemo(() => {
@@ -194,6 +217,20 @@ export default function ProgramsPage() {
     if (coveragePeriodOptions.some((period) => period.code === coveragePeriod)) return;
     setCoveragePeriod(defaultCoveragePeriod);
   }, [coveragePeriod, coveragePeriodOptions, defaultCoveragePeriod]);
+
+  useEffect(() => {
+    if (!viewOptions.length) return;
+    const currentView = searchParams.get("view");
+    const targetView = activeView === defaultView ? null : activeView;
+    if (currentView === targetView || (!currentView && !targetView)) return;
+    const nextParams = new URLSearchParams(searchParams);
+    if (targetView) {
+      nextParams.set("view", targetView);
+    } else {
+      nextParams.delete("view");
+    }
+    setSearchParams(nextParams, { replace: true });
+  }, [activeView, defaultView, searchParams, setSearchParams, viewOptions.length]);
 
   const coverageRows = useMemo(() => {
     if (!hasGlobalAccess || mandatoryEventCatalog.length === 0) return [];
@@ -250,7 +287,7 @@ export default function ProgramsPage() {
   );
   const coveragePagination = usePagination(incompleteCoverageRows);
 
-  if (!canManage) {
+  if (!viewOptions.length) {
     return <Panel><p className="text-sm text-slate-600">Access denied.</p></Panel>;
   }
 
@@ -317,40 +354,68 @@ export default function ProgramsPage() {
     form.university_id === NETWORK_SCOPE
       ? NETWORK_LABEL
       : (universities?.find((university: any) => university.id === Number(form.university_id || defaultUniversityId))?.name || "Your university or campus");
+  const portfolioHeaderAction = activeView === "portfolio" && canViewPortfolio ? (
+    <button className="primary-button" type="button" onClick={openCreateForm}>
+      Create a program
+    </button>
+  ) : null;
+  const activeViewHeader = {
+    portfolio: {
+      eyebrow: "",
+      title: "Portfolio"
+    },
+    broadcasts: {
+      eyebrow: "",
+      title: "Broadcasts"
+    },
+    calendar: {
+      eyebrow: "",
+      title: "Programming calendar"
+    },
+    coverage: {
+      eyebrow: "",
+      title: "Mandatory coverage"
+    }
+  }[activeView];
+  const showSubviewHeader = activeView === "portfolio" || activeView === "coverage";
+
+  function setActiveView(view: ProgramsView) {
+    const nextParams = new URLSearchParams(searchParams);
+    if (view === defaultView) {
+      nextParams.delete("view");
+    } else {
+      nextParams.set("view", view);
+    }
+    setSearchParams(nextParams);
+  }
 
   return (
     <div className="space-y-8">
-      <PageHeader
-        eyebrow="Ministry portfolio"
-        title="Ministry programs"
-        description="Each university, campus, or regional unit can own, update, and report student and alumni ministry programs separately from academic programs of study."
-        actions={(
-          <button className="primary-button" type="button" onClick={openCreateForm}>
-            Create a program
-          </button>
-        )}
-      />
-
-      {hasGlobalAccess ? (
+      {viewOptions.length > 1 ? (
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            className={activeView === "portfolio" ? "primary-button" : "secondary-button"}
-            type="button"
-            onClick={() => setActiveView("portfolio")}
-          >
-            Portfolio
-          </button>
-          <button
-            className={activeView === "coverage" ? "primary-button" : "secondary-button"}
-            type="button"
-            onClick={() => setActiveView("coverage")}
-          >
-            Mandatory coverage
-          </button>
+          {viewOptions.map((option) => (
+            <button
+              key={option.key}
+              className={activeView === option.key ? "primary-button" : "secondary-button"}
+              type="button"
+              onClick={() => setActiveView(option.key)}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
       ) : null}
 
-      {hasGlobalAccess && activeView === "coverage" ? (
+      {showSubviewHeader ? (
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h3 className="text-xl font-semibold text-slate-950">{activeViewHeader.title}</h3>
+          </div>
+          {portfolioHeaderAction}
+        </div>
+      ) : null}
+
+      {activeView === "coverage" ? (
         <>
           <div className="grid gap-4 lg:grid-cols-4">
             <MetricCard label="Campuses in view" value={formatNumber(coverageRows.length)} helper="Universities and campuses checked for the selected period" />
@@ -362,9 +427,7 @@ export default function ProgramsPage() {
           <Panel className="space-y-5">
             <div className="flex items-end justify-between gap-4">
               <div>
-                <p className="eyebrow">Mandatory coverage</p>
-                <h3 className="text-xl font-semibold text-slate-950">Campuses missing scheduled mandatory programs</h3>
-                <p className="mt-2 text-sm text-slate-600">This view compares dated ministry programs against the mandatory event list for the selected reporting period.</p>
+                <h4 className="text-lg font-semibold text-slate-950">Campuses missing scheduled mandatory programs</h4>
               </div>
               <label className="field-shell min-w-[180px]">
                 <span className="field-label">Reporting period</span>
@@ -451,6 +514,10 @@ export default function ProgramsPage() {
             )}
           </Panel>
         </>
+      ) : activeView === "broadcasts" ? (
+        <BroadcastsPage embedded />
+      ) : activeView === "calendar" ? (
+        <CalendarPage embedded />
       ) : (
         <>
           <div className="grid gap-4 lg:grid-cols-3">
@@ -462,8 +529,7 @@ export default function ProgramsPage() {
           <Panel className="space-y-5">
             <div className="flex items-end justify-between gap-4">
               <div>
-                <p className="eyebrow">Ministry program feed</p>
-                <h3 className="text-xl font-semibold text-slate-950">Portfolio by status</h3>
+                <h4 className="text-lg font-semibold text-slate-950">Portfolio by status</h4>
               </div>
               <label className="field-shell min-w-[180px]">
                 <span className="field-label">Status filter</span>

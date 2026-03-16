@@ -47,7 +47,7 @@ function statusTone(status?: string | null): "success" | "warning" | "danger" | 
   return "info";
 }
 
-export default function CalendarPage() {
+export default function CalendarPage({ embedded = false }: { embedded?: boolean }) {
   const { roles, scopedUniversityId } = useUniversityScope();
   const canView = roles.some((role) => ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin"].includes(role));
 
@@ -130,31 +130,42 @@ export default function CalendarPage() {
     () => Array.from({ length: 42 }, (_, index) => addDays(gridStart, index)),
     [gridStart]
   );
+  const headerActions = (
+    <>
+      <button className="secondary-button" type="button" onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1))}>
+        Previous month
+      </button>
+      <button className="secondary-button" type="button" onClick={() => setViewDate(new Date())}>
+        Today
+      </button>
+      <button className="secondary-button" type="button" onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1))}>
+        Next month
+      </button>
+    </>
+  );
 
   if (!canView) {
     return <Panel><p className="text-sm text-slate-600">Access denied.</p></Panel>;
   }
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        eyebrow="Program calendar"
-        title="Programming calendar"
-        description="Ministry programs with start and end dates are added to this calendar automatically. Create or update the program dates from the ministry programs workspace."
-        actions={(
-          <>
-            <button className="secondary-button" type="button" onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1))}>
-              Previous month
-            </button>
-            <button className="secondary-button" type="button" onClick={() => setViewDate(new Date())}>
-              Today
-            </button>
-            <button className="secondary-button" type="button" onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1))}>
-              Next month
-            </button>
-          </>
-        )}
-      />
+    <div className={embedded ? "space-y-6" : "space-y-8"}>
+      {embedded ? (
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {headerActions}
+          </div>
+        </div>
+      ) : (
+        <PageHeader
+          eyebrow="Program calendar"
+          title="Programming calendar"
+          description="Ministry programs with start and end dates are added to this calendar automatically. Create or update the program dates from the ministry programs workspace."
+          actions={headerActions}
+        />
+      )}
 
       <div className="grid gap-4 xl:grid-cols-4">
         <MetricCard label="Dated programs" value={formatNumber(scheduledPrograms.length)} helper={`${formatNumber(activeCampuses)} campuses represented`} />
