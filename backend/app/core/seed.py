@@ -34,53 +34,36 @@ DEFAULT_UNION_SPECS = [
     {"name": "Zimbabwe West Union Conference"},
 ]
 DEFAULT_CONFERENCE_SPECS = [
-    {"name": "North Zimbabwe Conference", "union_name": "Zimbabwe Central Union Conference"},
+    {"name": "North Zimbabwe Conference", "union_name": "Zimbabwe East Union Conference"},
     {"name": "East Zimbabwe Conference", "union_name": "Zimbabwe East Union Conference"},
     {"name": "South Zimbabwe Conference", "union_name": "Zimbabwe West Union Conference"},
     {"name": "Central Zimbabwe Conference", "union_name": "Zimbabwe Central Union Conference"},
 ]
 REPORTING_PERIOD_SPECS = [
     {
-        "code": "2026-Q1",
-        "label": "2026 Quarter 1",
+        "code": "2026-S1",
+        "label": "2026 Semester 1",
         "start_date": date(2026, 1, 1),
-        "end_date": date(2026, 3, 31),
+        "end_date": date(2026, 6, 30),
         "sort_order": 10,
     },
     {
-        "code": "2026-Q2",
-        "label": "2026 Quarter 2",
-        "start_date": date(2026, 4, 1),
-        "end_date": date(2026, 6, 30),
+        "code": "2026-S2",
+        "label": "2026 Semester 2",
+        "start_date": date(2026, 7, 1),
+        "end_date": date(2026, 12, 31),
         "sort_order": 20,
     },
-    {
-        "code": "2026-Q3",
-        "label": "2026 Quarter 3",
-        "start_date": date(2026, 7, 1),
-        "end_date": date(2026, 9, 30),
-        "sort_order": 30,
-    },
-    {
-        "code": "2026-Q4",
-        "label": "2026 Quarter 4",
-        "start_date": date(2026, 10, 1),
-        "end_date": date(2026, 12, 31),
-        "sort_order": 40,
-    },
 ]
-
-MARKETPLACE_DEMO_USER_SPECS = [
-    {
-        "email": "marketplace.supplier@pcm.local",
-        "name": "Marketplace Supplier",
-        "role": "general_user",
-    },
-    {
-        "email": "marketplace.coordinator@pcm.local",
-        "name": "Marketplace Coordinator",
-        "role": "general_user",
-    },
+LEGACY_MARKETPLACE_DEMO_EMAILS = [
+    "marketplace.supplier@pcm.local",
+    "marketplace.coordinator@pcm.local",
+]
+LEGACY_REPORTING_PERIOD_CODES = [
+    "2026-Q1",
+    "2026-Q2",
+    "2026-Q3",
+    "2026-Q4",
 ]
 
 
@@ -395,10 +378,13 @@ MANDATORY_EVENT_SPECS = [
     {"name": "Health expo", "sort_order": 30},
     {"name": "Orientation", "sort_order": 40},
     {"name": "Freshman camp", "sort_order": 50},
-    {"name": "Book distribution", "sort_order": 60},
-    {"name": "Medical missionary", "sort_order": 70},
     {"name": "Meeting", "sort_order": 80},
     {"name": "Other", "sort_order": 999, "allow_other_detail": True},
+]
+LEGACY_MANDATORY_EVENT_NAMES = [
+    "Book distribution",
+    "Medical missionary",
+    "Medical Missional",
 ]
 
 BROADCAST_SPECS = [
@@ -930,8 +916,6 @@ def _ensure_program_update(
         "Health expo",
         "Orientation",
         "Freshman camp",
-        "Book distribution",
-        "Medical missionary",
         "Zunde off campus",
     ]
     event_name = seeded_events[(index - 1) % len(seeded_events)]
@@ -941,7 +925,7 @@ def _ensure_program_update(
         program_id=program.id,
         title=event_name,
         event_name=event_name,
-        reporting_period="2026-Q1",
+        reporting_period="2026-S1",
         reporting_date=date(2026, 3, min(28, index + 6)),
         summary=f"{program.name} is active at {university.name} and continues to grow its ministry reach.",
         outcomes="Student participation is rising and volunteer structures are stabilizing.",
@@ -958,6 +942,12 @@ def _ensure_program_update(
 
 
 def _ensure_mandatory_programs(db: Session, admin: User) -> None:
+    for legacy_name in LEGACY_MANDATORY_EVENT_NAMES:
+        db.query(MandatoryProgram).filter(
+            MandatoryProgram.program_type == "event",
+            MandatoryProgram.name == legacy_name,
+        ).delete()
+
     for spec in MANDATORY_EVENT_SPECS:
         item = db.query(MandatoryProgram).filter(MandatoryProgram.name == spec["name"]).first()
         if not item:
@@ -991,6 +981,12 @@ def _ensure_mandatory_programs(db: Session, admin: User) -> None:
 
 
 def _ensure_reporting_periods(db: Session, admin: User) -> None:
+    active_codes = {spec["code"] for spec in REPORTING_PERIOD_SPECS}
+    for legacy_code in LEGACY_REPORTING_PERIOD_CODES:
+        if legacy_code in active_codes:
+            continue
+        db.query(ReportingPeriod).filter(ReportingPeriod.code == legacy_code).delete()
+
     for spec in REPORTING_PERIOD_SPECS:
         item = db.query(ReportingPeriod).filter(ReportingPeriod.code == spec["code"]).first()
         if not item:
@@ -1382,33 +1378,26 @@ def _backfill_generic_data(db: Session, admin: User) -> None:
 
 
 def _ensure_marketplace_demo_listings(db: Session, owner: User) -> None:
-    def _ensure_demo_user(email: str, name: str, role_name: str) -> User:
-        user = db.query(User).filter(User.email == email).first()
-        if not user:
-            user = User(
-                email=email,
-                name=name,
-                password_hash=hash_password(settings.admin_password),
-                is_active=True,
+    def _retire_legacy_demo_users() -> None:
+        retired_user_ids: list[int] = []
+        for legacy_email in LEGACY_MARKETPLACE_DEMO_EMAILS:
+            user = db.query(User).filter(User.email == legacy_email).first()
+            if not user:
+                continue
+            retired_user_ids.append(user.id)
+            db.query(MarketplaceListing).filter(MarketplaceListing.user_id == user.id).update(
+                {MarketplaceListing.user_id: owner.id},
+                synchronize_session=False,
             )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-        elif not user.is_active:
-            user.is_active = True
-            db.commit()
-            db.refresh(user)
-
-        _ensure_user_role(db, user, role_name)
-        return user
+            db.delete(user)
+        if retired_user_ids:
+            db.flush()
 
     universities = db.query(University).order_by(University.name.asc()).limit(5).all()
     if not universities:
         return
 
-    demo_users = [owner]
-    for user_spec in MARKETPLACE_DEMO_USER_SPECS:
-        demo_users.append(_ensure_demo_user(user_spec["email"], user_spec["name"], user_spec["role"]))
+    _retire_legacy_demo_users()
 
     listing_specs = [
         {
@@ -1419,7 +1408,6 @@ def _ensure_marketplace_demo_listings(db: Session, owner: User) -> None:
             "status": "active",
             "description": "Reliable printing for outreach flyers, banners, pull-up stands, and event backdrops for PCM activities.",
             "university_index": 0,
-            "owner_index": 1,
         },
         {
             "title": "Need affordable transport for evangelism weekend",
@@ -1429,7 +1417,6 @@ def _ensure_marketplace_demo_listings(db: Session, owner: User) -> None:
             "status": "active",
             "description": "Looking for a trusted bus or kombi provider to move students and supplies for an off-campus mission weekend.",
             "university_index": 1,
-            "owner_index": 0,
         },
         {
             "title": "Career mentorship and CV clinic",
@@ -1439,7 +1426,6 @@ def _ensure_marketplace_demo_listings(db: Session, owner: User) -> None:
             "status": "active",
             "description": "Support for finalists and recent graduates with CV polishing, interview coaching, LinkedIn setup, and career navigation.",
             "university_index": 2,
-            "owner_index": 2,
         },
         {
             "title": "Need branded t-shirts and caps for congress",
@@ -1449,7 +1435,6 @@ def _ensure_marketplace_demo_listings(db: Session, owner: User) -> None:
             "status": "active",
             "description": "Seeking a supplier who can handle branded PCM apparel in moderate volume with reliable turnaround times.",
             "university_index": 3,
-            "owner_index": 0,
         },
         {
             "title": "Event catering and refreshment packs",
@@ -1459,13 +1444,11 @@ def _ensure_marketplace_demo_listings(db: Session, owner: User) -> None:
             "status": "active",
             "description": "Catering support for seminars, reporting workshops, prayer retreats, and alumni networking gatherings.",
             "university_index": 4,
-            "owner_index": 1,
         },
     ]
 
     for spec in listing_specs:
         university = universities[min(spec["university_index"], len(universities) - 1)]
-        listing_owner = demo_users[min(spec["owner_index"], len(demo_users) - 1)]
         listing = (
             db.query(MarketplaceListing)
             .filter(
@@ -1475,7 +1458,7 @@ def _ensure_marketplace_demo_listings(db: Session, owner: User) -> None:
         )
         if not listing:
             listing = MarketplaceListing(
-                user_id=listing_owner.id,
+                user_id=owner.id,
                 university_id=university.id,
                 listing_type=spec["listing_type"],
                 title=spec["title"],
@@ -1487,8 +1470,8 @@ def _ensure_marketplace_demo_listings(db: Session, owner: User) -> None:
             db.add(listing)
             continue
 
-        if listing.user_id != listing_owner.id:
-            listing.user_id = listing_owner.id
+        if listing.user_id != owner.id:
+            listing.user_id = owner.id
         if not listing.university_id:
             listing.university_id = university.id
         for field in ["listing_type", "description", "category", "price_text", "status"]:

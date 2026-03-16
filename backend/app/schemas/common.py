@@ -276,6 +276,19 @@ class MemberRead(MemberBase):
     updated_at: datetime
 
 
+class MemberProvisionPrefillRead(SchemaModel):
+    id: str
+    name: str
+    email: Optional[str] = None
+    university_id: int
+    university_name: Optional[str] = None
+    conference_id: Optional[int] = None
+    conference_name: Optional[str] = None
+    union_id: Optional[int] = None
+    union_name: Optional[str] = None
+    status: Optional[str] = None
+
+
 class AlumniConnectRead(SchemaModel):
     id: str
     member_id: Optional[str] = None

@@ -88,6 +88,8 @@ export const usersApi = {
 export const membersApi = {
   list: (scope?: number | ScopeParams | null) => api.get("/members", scopedParams(scope)).then((res) => res.data),
   alumniConnect: (scope?: number | ScopeParams | null) => api.get("/members/alumni-connect", scopedParams(scope)).then((res) => res.data),
+  lookupProvisionPrefill: (email: string, scope?: number | ScopeParams | null) =>
+    api.get("/members/lookup-by-email", scopedParams(scope, { email })).then((res) => res.data),
   myProfile: () => api.get("/members/me-profile").then((res) => res.data),
   updateMyProfile: (payload: any) => api.patch("/members/me-profile", payload).then((res) => res.data),
   create: (payload: any) => api.post("/members", payload).then((res) => res.data),

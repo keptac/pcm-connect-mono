@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { conferencesApi, universitiesApi, unionsApi, usersApi } from "../api/endpoints";
+import { conferencesApi, membersApi, universitiesApi, unionsApi, usersApi } from "../api/endpoints";
 import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatDate, formatNumber } from "../lib/format";
@@ -269,6 +269,8 @@ export default function UsersPage() {
   const [recoveryForceReset, setRecoveryForceReset] = useState(true);
   const [recoveryError, setRecoveryError] = useState("");
   const [isRecoveringPassword, setIsRecoveringPassword] = useState(false);
+  const [prefillMember, setPrefillMember] = useState<any | null>(null);
+  const [isLookingUpPrefill, setIsLookingUpPrefill] = useState(false);
 
   const selectedRole = form.roles[0] || "";
   const selectedScope = parseScopeValue(form.scope_value);
@@ -297,6 +299,22 @@ export default function UsersPage() {
     });
   }, [availableRoleOptions, defaultProvisionRole]);
 
+  useEffect(() => {
+    if (!prefillMember || selectedUser || !canSelectUniversity || globalOnlyRoles.includes(selectedRole)) {
+      return;
+    }
+    setForm((current) => {
+      const nextScopeValue = buildScopeValue(prefillMember.university_id, null, null, current.scope_value);
+      if (current.scope_value === nextScopeValue) {
+        return current;
+      }
+      return {
+        ...current,
+        scope_value: nextScopeValue
+      };
+    });
+  }, [canSelectUniversity, prefillMember, selectedRole, selectedUser]);
+
   if (!canManageTeam) {
     return <Panel><p className="text-sm text-slate-600">Admin access required.</p></Panel>;
   }
@@ -304,6 +322,7 @@ export default function UsersPage() {
   function resetForm() {
     setForm(selectedUser ? buildEditForm(selectedUser, defaultScopeValue) : buildInitialForm(defaultScopeValue, defaultProvisionRole));
     setFormError("");
+    setPrefillMember(null);
   }
 
   function closeForm() {
@@ -311,12 +330,14 @@ export default function UsersPage() {
     setSelectedUser(null);
     setForm(buildInitialForm(defaultScopeValue, defaultProvisionRole));
     setFormError("");
+    setPrefillMember(null);
   }
 
   function openCreateForm() {
     setSelectedUser(null);
     setForm(buildInitialForm(defaultScopeValue, defaultProvisionRole));
     setFormError("");
+    setPrefillMember(null);
     setIsFormOpen(true);
   }
 
@@ -324,6 +345,7 @@ export default function UsersPage() {
     setSelectedUser(user);
     setForm(buildEditForm(user, defaultScopeValue));
     setFormError("");
+    setPrefillMember(null);
     setIsFormOpen(true);
   }
 
@@ -339,6 +361,36 @@ export default function UsersPage() {
     setRecoveryPassword("");
     setRecoveryForceReset(true);
     setRecoveryError("");
+  }
+
+  async function lookupProvisionPrefill(email: string) {
+    if (selectedUser || !canProvisionTeam) return;
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !normalizedEmail.includes("@")) {
+      setPrefillMember(null);
+      return;
+    }
+
+    setIsLookingUpPrefill(true);
+    try {
+      const match = await membersApi.lookupProvisionPrefill(normalizedEmail, scopeParams);
+      setPrefillMember(match || null);
+      if (!match) {
+        return;
+      }
+      setForm((current) => ({
+        ...current,
+        name: match.name || current.name,
+        scope_value:
+          canSelectUniversity && !globalOnlyRoles.includes(current.roles[0] || "")
+            ? buildScopeValue(match.university_id, null, null, current.scope_value)
+            : current.scope_value
+      }));
+    } catch {
+      setPrefillMember(null);
+    } finally {
+      setIsLookingUpPrefill(false);
+    }
   }
 
   async function refreshTeamQueries() {
@@ -625,7 +677,31 @@ export default function UsersPage() {
             </label>
             <label className="field-shell">
               <span className="field-label">Email</span>
-              <input className="field-input" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+              <input
+                className="field-input"
+                type="email"
+                value={form.email}
+                onChange={(event) => {
+                  const nextEmail = event.target.value;
+                  setForm({ ...form, email: nextEmail });
+                  if (prefillMember && nextEmail.trim().toLowerCase() !== String(prefillMember.email || "").trim().toLowerCase()) {
+                    setPrefillMember(null);
+                  }
+                }}
+                onBlur={(event) => {
+                  void lookupProvisionPrefill(event.target.value);
+                }}
+              />
+              {!selectedUser && isLookingUpPrefill ? (
+                <span className="mt-2 block text-xs text-slate-500">Checking People records...</span>
+              ) : null}
+              {!selectedUser && prefillMember ? (
+                <span className="mt-2 block text-xs text-emerald-700">
+                  Matched People record: {prefillMember.name}
+                  {prefillMember.university_name ? `, ${prefillMember.university_name}` : ""}
+                  {prefillMember.status ? `, ${prefillMember.status}` : ""}
+                </span>
+              ) : null}
             </label>
             <label className="field-shell">
               <span className="field-label">{selectedUser ? "Reset password" : "Password"}</span>

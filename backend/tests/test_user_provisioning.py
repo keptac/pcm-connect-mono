@@ -12,10 +12,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.api.deps import FUNDING_ROLES, FUNDING_WRITE_ROLES, require_role
 from app.api.routes.auth import change_password, login
 from app.api.routes.funding import create_funding_record
+from app.api.routes.members import lookup_member_by_email_for_team_provisioning
 from app.api.routes.users import create_user, list_users, recover_user_password, update_user
 from app.core.security import hash_password, verify_password
 from app.db.base import Base
-from app.models import Conference, FundingRecord, Role, Union, University, User, UserRole
+from app.models import Conference, FundingRecord, Member, Role, Union, University, User, UserRole
 from app.schemas import ChangePasswordRequest, FundingRecordCreate, LoginRequest, UserCreate, UserPasswordRecovery, UserUpdate
 from app.services.user_lifecycle import run_user_lifecycle_maintenance
 
@@ -426,6 +427,74 @@ def test_conference_scoped_admin_can_only_provision_within_own_conference(db_ses
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "Invalid union scope"
+
+
+def test_team_provision_lookup_prefills_member_from_visible_people_scope(db_session: Session):
+    union = Union(name="Zimbabwe East Union Conference", is_active=True)
+    conference = Conference(name="East Zimbabwe Conference", union_name=union.name, union=union)
+    campus = University(name="Campus East", conference=conference)
+    provisioner = User(
+        email="super-admin@example.com",
+        name="Super Admin",
+        password_hash="hashed",
+    )
+    member = Member(
+        university=campus,
+        first_name="Ada",
+        last_name="Moyo",
+        member_id="PCM-001",
+        email="ada@example.com",
+        status="Student",
+    )
+    db_session.add_all([union, conference, campus, provisioner, member])
+    db_session.commit()
+    add_role(db_session, provisioner, "super_admin")
+
+    prefill = lookup_member_by_email_for_team_provisioning(
+        email="ada@example.com",
+        db=db_session,
+        user=provisioner,
+    )
+
+    assert prefill is not None
+    assert prefill.name == "Ada Moyo"
+    assert prefill.university_id == campus.id
+    assert prefill.conference_id == conference.id
+    assert prefill.union_id == union.id
+    assert prefill.status == "Student"
+
+
+def test_team_provision_lookup_respects_visible_people_scope(db_session: Session):
+    union = Union(name="Zimbabwe East Union Conference", is_active=True)
+    conference_east = Conference(name="East Zimbabwe Conference", union_name=union.name, union=union)
+    conference_west = Conference(name="West Zimbabwe Conference", union_name=union.name, union=union)
+    campus_east = University(name="Campus East", conference=conference_east)
+    campus_west = University(name="Campus West", conference=conference_west)
+    provisioner = User(
+        email="student-admin@example.com",
+        name="Student Admin",
+        password_hash="hashed",
+        university=campus_east,
+    )
+    member = Member(
+        university=campus_west,
+        first_name="Outside",
+        last_name="Campus",
+        member_id="PCM-002",
+        email="outside@example.com",
+        status="Student",
+    )
+    db_session.add_all([union, conference_east, conference_west, campus_east, campus_west, provisioner, member])
+    db_session.commit()
+    add_role(db_session, provisioner, "student_admin")
+
+    prefill = lookup_member_by_email_for_team_provisioning(
+        email="outside@example.com",
+        db=db_session,
+        user=provisioner,
+    )
+
+    assert prefill is None
 
 
 def test_service_recovery_can_reset_password_and_force_change(db_session: Session):

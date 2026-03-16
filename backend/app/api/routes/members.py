@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ...db.session import get_db
 from ...models import AcademicProgram, Member
-from ...schemas import AlumniConnectRead, MemberCreate, MemberRead, MemberSelfProfileUpdate, MemberUpdate
+from ...schemas import AlumniConnectRead, MemberCreate, MemberProvisionPrefillRead, MemberRead, MemberSelfProfileUpdate, MemberUpdate
 from ...services.audit_log import log_action
 from ...services.rbac import get_user_roles
 from ..deps import (
@@ -132,6 +132,23 @@ def _serialize_alumni_connect(member: Member) -> AlumniConnectRead:
         services_offered=member.services_offered,
         products_supplied=member.products_supplied,
         email=member.email,
+    )
+
+
+def _serialize_member_provision_prefill(member: Member) -> MemberProvisionPrefillRead:
+    conference = member.university.conference if member.university and member.university.conference else None
+    union = conference.union if conference and conference.union else None
+    return MemberProvisionPrefillRead(
+        id=str(member.id),
+        name=" ".join(part for part in [member.first_name, member.last_name] if part).strip() or member.email or "",
+        email=member.email,
+        university_id=member.university_id,
+        university_name=member.university.name if member.university else None,
+        conference_id=conference.id if conference else None,
+        conference_name=conference.name if conference else None,
+        union_id=union.id if union else None,
+        union_name=union.name if union else None,
+        status=member.status,
     )
 
 
@@ -261,6 +278,43 @@ def list_alumni_connect(
     )
     query = apply_university_scope_filter(query, Member, scoped_university_ids)
     return [_serialize_alumni_connect(item) for item in query.all()]
+
+
+@router.get("/lookup-by-email", response_model=MemberProvisionPrefillRead | None)
+def lookup_member_by_email_for_team_provisioning(
+    email: str,
+    university_id: int | None = None,
+    conference_id: int | None = None,
+    union_id: int | None = None,
+    db: Session = Depends(get_db),
+    user=Depends(require_role(CHAPTER_ROLES)),
+):
+    normalized_email = (email or "").strip().lower()
+    if not normalized_email:
+        return None
+
+    scoped_university_ids = resolve_visible_university_ids(
+        db,
+        user,
+        requested_university_id=university_id,
+        requested_conference_id=conference_id,
+        requested_union_id=union_id,
+    )
+    visible_statuses, _ = _member_access_scope(db, user)
+    query = db.query(Member).filter(func.lower(Member.email) == normalized_email)
+    query = apply_university_scope_filter(query, Member, scoped_university_ids)
+    if visible_statuses:
+        query = query.filter(Member.status.in_(visible_statuses))
+
+    member = (
+        query.order_by(
+            Member.active.desc(),
+            Member.updated_at.desc(),
+            Member.created_at.desc(),
+        )
+        .first()
+    )
+    return _serialize_member_provision_prefill(member) if member else None
 
 
 @router.get("/me-profile", response_model=MemberRead)
