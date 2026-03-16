@@ -183,6 +183,32 @@ export function TableActionButton({
   );
 }
 
+export function TableSearchField({
+  value,
+  onChange,
+  placeholder,
+  label = "Search",
+  className
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <label className={joinClasses("field-shell min-w-[220px]", className)}>
+      <span className="field-label">{label}</span>
+      <input
+        className="field-input"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
 export function EmptyState({
   title
 }: {

@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { adminApi, conferencesApi, mandatoryProgramsApi, reportingPeriodsApi, unionsApi } from "../api/endpoints";
-import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
+import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, TableSearchField, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatDate, formatNumber } from "../lib/format";
+import { matchesTableSearch } from "../lib/tableSearch";
 import { useAuthStore } from "../store/auth";
 
 function formatActorLabel(log: any) {
@@ -30,6 +31,11 @@ export default function AdminPage() {
   const [transitionProgress, setTransitionProgress] = useState(0);
   const [transitionUpdatedCount, setTransitionUpdatedCount] = useState<number | null>(null);
   const [transitionError, setTransitionError] = useState("");
+  const [unionSearch, setUnionSearch] = useState("");
+  const [conferenceSearch, setConferenceSearch] = useState("");
+  const [reportingPeriodSearch, setReportingPeriodSearch] = useState("");
+  const [mandatoryProgramSearch, setMandatoryProgramSearch] = useState("");
+  const [auditLogSearch, setAuditLogSearch] = useState("");
   const [mandatoryForm, setMandatoryForm] = useState({
     name: "",
     sort_order: "0",
@@ -80,11 +86,61 @@ export default function AdminPage() {
     enabled: isAdmin
   });
   const unionDirectoryDefaultId = String((unions || []).find((item: any) => item.name === "Zimbabwe East Union Conference")?.id || unions?.[0]?.id || "");
-  const unionsPagination = usePagination(unions);
-  const conferencesPagination = usePagination(conferences);
-  const reportingPeriodsPagination = usePagination(reportingPeriods);
-  const mandatoryProgramsPagination = usePagination(mandatoryPrograms);
-  const auditLogsPagination = usePagination(logs, 12);
+  const filteredUnions = useMemo(
+    () => (unions || []).filter((union: any) => matchesTableSearch(unionSearch, [
+      union.name,
+      union.conference_count,
+      union.is_active ? "active" : "inactive"
+    ])),
+    [unionSearch, unions]
+  );
+  const filteredConferences = useMemo(
+    () => (conferences || []).filter((conference: any) => matchesTableSearch(conferenceSearch, [
+      conference.name,
+      conference.union_name,
+      conference.campus_count,
+      conference.is_active ? "active" : "inactive"
+    ])),
+    [conferenceSearch, conferences]
+  );
+  const filteredReportingPeriods = useMemo(
+    () => (reportingPeriods || []).filter((period: any) => matchesTableSearch(reportingPeriodSearch, [
+      period.code,
+      period.label,
+      period.start_date,
+      period.end_date,
+      period.sort_order,
+      period.is_active ? "active" : "inactive"
+    ])),
+    [reportingPeriodSearch, reportingPeriods]
+  );
+  const filteredMandatoryPrograms = useMemo(
+    () => (mandatoryPrograms || []).filter((item: any) => matchesTableSearch(mandatoryProgramSearch, [
+      item.name,
+      item.program_type,
+      item.sort_order,
+      item.is_active ? "active" : "inactive",
+      item.allow_other_detail ? "specify enabled" : "fixed option"
+    ])),
+    [mandatoryProgramSearch, mandatoryPrograms]
+  );
+  const filteredLogs = useMemo(
+    () => (logs || []).filter((log: any) => matchesTableSearch(auditLogSearch, [
+      formatDate(log.created_at),
+      log.action,
+      log.entity,
+      log.entity_id,
+      formatActorLabel(log).primary,
+      formatActorLabel(log).secondary,
+      log.meta
+    ])),
+    [auditLogSearch, logs]
+  );
+  const unionsPagination = usePagination(filteredUnions);
+  const conferencesPagination = usePagination(filteredConferences);
+  const reportingPeriodsPagination = usePagination(filteredReportingPeriods);
+  const mandatoryProgramsPagination = usePagination(filteredMandatoryPrograms);
+  const auditLogsPagination = usePagination(filteredLogs, 12);
 
   useEffect(() => {
     if (transitionState !== "running") return undefined;
@@ -296,52 +352,63 @@ export default function AdminPage() {
                 <EmptyState title="No unions configured" />
               ) : (
                 <div className="space-y-5 rounded-[12px] border border-slate-200/80 bg-white/85 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
-                  <div>
-                    <p className="eyebrow">Union directory</p>
-                    <h4 className="text-lg font-semibold text-slate-950">Configured unions</h4>
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <p className="eyebrow">Union directory</p>
+                      <h4 className="text-lg font-semibold text-slate-950">Configured unions</h4>
+                    </div>
+                    <TableSearchField
+                      value={unionSearch}
+                      onChange={setUnionSearch}
+                      placeholder="Search union name or status"
+                    />
                   </div>
-                  <div className="table-shell">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Union</th>
-                          <th>Conferences</th>
-                          <th>Status</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {unionsPagination.pageItems.map((union: any) => (
-                          <tr key={union.id}>
-                            <td><div className="table-primary">{union.name}</div></td>
-                            <td>{formatNumber(union.conference_count)}</td>
-                            <td>
-                              <StatusBadge label={union.is_active ? "active" : "inactive"} tone={union.is_active ? "success" : "warning"} />
-                            </td>
-                            <td>
-                              <div className="table-actions">
-                                <TableActionButton
-                                  label="Edit union"
-                                  tone="edit"
-                                  onClick={() => {
-                                    setSelectedUnionId(union.id);
-                                    setUnionForm({
-                                      name: union.name || "",
-                                      is_active: union.is_active ?? true
-                                    });
-                                  }}
-                                />
-                              </div>
-                            </td>
+                  {filteredUnions.length === 0 ? (
+                    <EmptyState title={unions?.length ? "No unions match this search" : "No unions configured"} />
+                  ) : (
+                    <div className="table-shell">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Union</th>
+                            <th>Conferences</th>
+                            <th>Status</th>
+                            <th>Actions</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {unionsPagination.pageItems.map((union: any) => (
+                            <tr key={union.id}>
+                              <td><div className="table-primary">{union.name}</div></td>
+                              <td>{formatNumber(union.conference_count)}</td>
+                              <td>
+                                <StatusBadge label={union.is_active ? "active" : "inactive"} tone={union.is_active ? "success" : "warning"} />
+                              </td>
+                              <td>
+                                <div className="table-actions">
+                                  <TableActionButton
+                                    label="Edit union"
+                                    tone="edit"
+                                    onClick={() => {
+                                      setSelectedUnionId(union.id);
+                                      setUnionForm({
+                                        name: union.name || "",
+                                        is_active: union.is_active ?? true
+                                      });
+                                    }}
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                   <TablePagination
                     pagination={unionsPagination}
                     itemLabel="unions"
-                    onExport={() => exportRowsAsCsv("union-directory", (unions || []).map((union: any) => ({
+                    onExport={() => exportRowsAsCsv("union-directory", filteredUnions.map((union: any) => ({
                       union: union.name,
                       conference_count: union.conference_count || 0,
                       status: union.is_active ? "active" : "inactive"
@@ -424,57 +491,68 @@ export default function AdminPage() {
                 />
               ) : (
                 <div className="space-y-5 rounded-[12px] border border-slate-200/80 bg-white/85 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
-                  <div>
-                    <p className="eyebrow">Conference directory</p>
-                    <h4 className="text-lg font-semibold text-slate-950">Configured conferences</h4>
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <p className="eyebrow">Conference directory</p>
+                      <h4 className="text-lg font-semibold text-slate-950">Configured conferences</h4>
+                    </div>
+                    <TableSearchField
+                      value={conferenceSearch}
+                      onChange={setConferenceSearch}
+                      placeholder="Search conference, union, campus count, or status"
+                    />
                   </div>
-                  <div className="table-shell">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Conference</th>
-                          <th>Union</th>
-                          <th>Campuses</th>
-                          <th>Status</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {conferencesPagination.pageItems.map((conference: any) => (
-                          <tr key={conference.id}>
-                            <td>
-                              <div className="table-primary">{conference.name}</div>
-                            </td>
-                            <td>{conference.union_name}</td>
-                            <td>{formatNumber(conference.campus_count)}</td>
-                            <td>
-                              <StatusBadge label={conference.is_active ? "active" : "inactive"} tone={conference.is_active ? "success" : "warning"} />
-                            </td>
-                            <td>
-                              <div className="table-actions">
-                                <TableActionButton
-                                      label="Edit conference"
-                                      tone="edit"
-                                      onClick={() => {
-                                        setSelectedConferenceId(conference.id);
-                                        setConferenceForm({
-                                          name: conference.name || "",
-                                          union_id: conference.union_id ? String(conference.union_id) : unionDirectoryDefaultId,
-                                          is_active: conference.is_active ?? true
-                                        });
-                                      }}
-                                />
-                              </div>
-                            </td>
+                  {filteredConferences.length === 0 ? (
+                    <EmptyState title={conferences?.length ? "No conferences match this search" : "No conferences configured"} />
+                  ) : (
+                    <div className="table-shell">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Conference</th>
+                            <th>Union</th>
+                            <th>Campuses</th>
+                            <th>Status</th>
+                            <th>Actions</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {conferencesPagination.pageItems.map((conference: any) => (
+                            <tr key={conference.id}>
+                              <td>
+                                <div className="table-primary">{conference.name}</div>
+                              </td>
+                              <td>{conference.union_name}</td>
+                              <td>{formatNumber(conference.campus_count)}</td>
+                              <td>
+                                <StatusBadge label={conference.is_active ? "active" : "inactive"} tone={conference.is_active ? "success" : "warning"} />
+                              </td>
+                              <td>
+                                <div className="table-actions">
+                                  <TableActionButton
+                                        label="Edit conference"
+                                        tone="edit"
+                                        onClick={() => {
+                                          setSelectedConferenceId(conference.id);
+                                          setConferenceForm({
+                                            name: conference.name || "",
+                                            union_id: conference.union_id ? String(conference.union_id) : unionDirectoryDefaultId,
+                                            is_active: conference.is_active ?? true
+                                          });
+                                        }}
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                   <TablePagination
                     pagination={conferencesPagination}
                     itemLabel="conferences"
-                    onExport={() => exportRowsAsCsv("conference-directory", (conferences || []).map((conference: any) => ({
+                    onExport={() => exportRowsAsCsv("conference-directory", filteredConferences.map((conference: any) => ({
                       conference: conference.name,
                       union: conference.union_name || "",
                       campus_count: conference.campus_count || 0,
@@ -568,71 +646,82 @@ export default function AdminPage() {
                 />
               ) : (
                 <div className="space-y-5 rounded-[12px] border border-slate-200/80 bg-white/85 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
-                  <div>
-                    <p className="eyebrow">Reporting period directory</p>
-                    <h4 className="text-lg font-semibold text-slate-950">Configured reporting windows</h4>
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <p className="eyebrow">Reporting period directory</p>
+                      <h4 className="text-lg font-semibold text-slate-950">Configured reporting windows</h4>
+                    </div>
+                    <TableSearchField
+                      value={reportingPeriodSearch}
+                      onChange={setReportingPeriodSearch}
+                      placeholder="Search code, label, window, or status"
+                    />
                   </div>
-                  <div className="table-shell">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Code</th>
-                          <th>Label</th>
-                          <th>Window</th>
-                          <th>Status</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {reportingPeriodsPagination.pageItems.map((period: any) => (
-                          <tr key={period.id}>
-                            <td>
-                              <div className="table-primary">{period.code}</div>
-                            </td>
-                            <td>{period.label}</td>
-                            <td>{formatDate(period.start_date)} to {formatDate(period.end_date)}</td>
-                            <td>
-                              <StatusBadge label={period.is_active ? "active" : "inactive"} tone={period.is_active ? "success" : "warning"} />
-                            </td>
-                            <td>
-                              <div className="table-actions">
-                                <TableActionButton
-                                  label="Edit reporting period"
-                                  tone="edit"
-                                  onClick={() => {
-                                    setSelectedReportingPeriodId(period.id);
-                                    setReportingPeriodForm({
-                                      code: period.code || "",
-                                      label: period.label || "",
-                                      start_date: period.start_date || "",
-                                      end_date: period.end_date || "",
-                                      sort_order: String(period.sort_order || 0),
-                                      is_active: period.is_active ?? true
-                                    });
-                                  }}
-                                />
-                                <TableActionButton
-                                  label="Delete reporting period"
-                                  tone="delete"
-                                  onClick={async () => {
-                                    await reportingPeriodsApi.delete(period.id);
-                                    await client.invalidateQueries({ queryKey: ["reporting-periods"] });
-                                    if (selectedReportingPeriodId === period.id) {
-                                      resetReportingPeriodForm();
-                                    }
-                                  }}
-                                />
-                              </div>
-                            </td>
+                  {filteredReportingPeriods.length === 0 ? (
+                    <EmptyState title={reportingPeriods?.length ? "No reporting periods match this search" : "No reporting periods configured"} />
+                  ) : (
+                    <div className="table-shell">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Code</th>
+                            <th>Label</th>
+                            <th>Window</th>
+                            <th>Status</th>
+                            <th>Actions</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {reportingPeriodsPagination.pageItems.map((period: any) => (
+                            <tr key={period.id}>
+                              <td>
+                                <div className="table-primary">{period.code}</div>
+                              </td>
+                              <td>{period.label}</td>
+                              <td>{formatDate(period.start_date)} to {formatDate(period.end_date)}</td>
+                              <td>
+                                <StatusBadge label={period.is_active ? "active" : "inactive"} tone={period.is_active ? "success" : "warning"} />
+                              </td>
+                              <td>
+                                <div className="table-actions">
+                                  <TableActionButton
+                                    label="Edit reporting period"
+                                    tone="edit"
+                                    onClick={() => {
+                                      setSelectedReportingPeriodId(period.id);
+                                      setReportingPeriodForm({
+                                        code: period.code || "",
+                                        label: period.label || "",
+                                        start_date: period.start_date || "",
+                                        end_date: period.end_date || "",
+                                        sort_order: String(period.sort_order || 0),
+                                        is_active: period.is_active ?? true
+                                      });
+                                    }}
+                                  />
+                                  <TableActionButton
+                                    label="Delete reporting period"
+                                    tone="delete"
+                                    onClick={async () => {
+                                      await reportingPeriodsApi.delete(period.id);
+                                      await client.invalidateQueries({ queryKey: ["reporting-periods"] });
+                                      if (selectedReportingPeriodId === period.id) {
+                                        resetReportingPeriodForm();
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                   <TablePagination
                     pagination={reportingPeriodsPagination}
                     itemLabel="reporting periods"
-                    onExport={() => exportRowsAsCsv("reporting-periods", (reportingPeriods || []).map((period: any) => ({
+                    onExport={() => exportRowsAsCsv("reporting-periods", filteredReportingPeriods.map((period: any) => ({
                       code: period.code,
                       label: period.label || "",
                       start_date: formatDate(period.start_date),
@@ -717,72 +806,83 @@ export default function AdminPage() {
                 />
               ) : (
                 <div className="space-y-5 rounded-[12px] border border-slate-200/80 bg-white/85 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
-                  <div>
-                    <p className="eyebrow">Mandatory program directory</p>
-                    <h4 className="text-lg font-semibold text-slate-950">Configured event options</h4>
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <p className="eyebrow">Mandatory program directory</p>
+                      <h4 className="text-lg font-semibold text-slate-950">Configured event options</h4>
+                    </div>
+                    <TableSearchField
+                      value={mandatoryProgramSearch}
+                      onChange={setMandatoryProgramSearch}
+                      placeholder="Search event, type, order, or status"
+                    />
                   </div>
-                  <div className="table-shell">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Event</th>
-                          <th>Order</th>
-                          <th>Status</th>
-                          <th>Specify</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {mandatoryProgramsPagination.pageItems.map((item: any) => (
-                          <tr key={item.id}>
-                            <td>
-                              <div className="table-primary">{item.name}</div>
-                              <div className="table-secondary">Type: {item.program_type}</div>
-                            </td>
-                            <td>{formatNumber(item.sort_order)}</td>
-                            <td>
-                              <StatusBadge label={item.is_active ? "active" : "inactive"} tone={item.is_active ? "success" : "warning"} />
-                            </td>
-                            <td>
-                              <StatusBadge label={item.allow_other_detail ? "specify enabled" : "fixed option"} tone={item.allow_other_detail ? "info" : "neutral"} />
-                            </td>
-                            <td>
-                              <div className="table-actions">
-                                <TableActionButton
-                                  label="Edit mandatory program"
-                                  tone="edit"
-                                  onClick={() => {
-                                    setSelectedMandatoryId(item.id);
-                                    setMandatoryForm({
-                                      name: item.name || "",
-                                      sort_order: String(item.sort_order || 0),
-                                      is_active: item.is_active ?? true,
-                                      allow_other_detail: item.allow_other_detail ?? false
-                                    });
-                                  }}
-                                />
-                                <TableActionButton
-                                  label="Delete mandatory program"
-                                  tone="delete"
-                                  onClick={async () => {
-                                    await mandatoryProgramsApi.delete(item.id);
-                                    await client.invalidateQueries({ queryKey: ["mandatory-programs"] });
-                                    if (selectedMandatoryId === item.id) {
-                                      resetMandatoryForm();
-                                    }
-                                  }}
-                                />
-                              </div>
-                            </td>
+                  {filteredMandatoryPrograms.length === 0 ? (
+                    <EmptyState title={mandatoryPrograms?.length ? "No event options match this search" : "No mandatory events configured"} />
+                  ) : (
+                    <div className="table-shell">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Event</th>
+                            <th>Order</th>
+                            <th>Status</th>
+                            <th>Specify</th>
+                            <th>Actions</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {mandatoryProgramsPagination.pageItems.map((item: any) => (
+                            <tr key={item.id}>
+                              <td>
+                                <div className="table-primary">{item.name}</div>
+                                <div className="table-secondary">Type: {item.program_type}</div>
+                              </td>
+                              <td>{formatNumber(item.sort_order)}</td>
+                              <td>
+                                <StatusBadge label={item.is_active ? "active" : "inactive"} tone={item.is_active ? "success" : "warning"} />
+                              </td>
+                              <td>
+                                <StatusBadge label={item.allow_other_detail ? "specify enabled" : "fixed option"} tone={item.allow_other_detail ? "info" : "neutral"} />
+                              </td>
+                              <td>
+                                <div className="table-actions">
+                                  <TableActionButton
+                                    label="Edit mandatory program"
+                                    tone="edit"
+                                    onClick={() => {
+                                      setSelectedMandatoryId(item.id);
+                                      setMandatoryForm({
+                                        name: item.name || "",
+                                        sort_order: String(item.sort_order || 0),
+                                        is_active: item.is_active ?? true,
+                                        allow_other_detail: item.allow_other_detail ?? false
+                                      });
+                                    }}
+                                  />
+                                  <TableActionButton
+                                    label="Delete mandatory program"
+                                    tone="delete"
+                                    onClick={async () => {
+                                      await mandatoryProgramsApi.delete(item.id);
+                                      await client.invalidateQueries({ queryKey: ["mandatory-programs"] });
+                                      if (selectedMandatoryId === item.id) {
+                                        resetMandatoryForm();
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                   <TablePagination
                     pagination={mandatoryProgramsPagination}
                     itemLabel="events"
-                    onExport={() => exportRowsAsCsv("mandatory-programs", (mandatoryPrograms || []).map((item: any) => ({
+                    onExport={() => exportRowsAsCsv("mandatory-programs", filteredMandatoryPrograms.map((item: any) => ({
                       event: item.name,
                       program_type: item.program_type || "",
                       display_order: item.sort_order || 0,
@@ -895,20 +995,26 @@ export default function AdminPage() {
 
       <ModalDialog open={isAuditLogDialogOpen} onClose={() => setIsAuditLogDialogOpen(false)} className="modal-shell-page">
         <div className="space-y-5">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="eyebrow">System activity log</p>
               <h3 className="text-xl font-semibold text-slate-950">Recent system activity</h3>
             </div>
-            <button className="secondary-button" type="button" onClick={() => setIsAuditLogDialogOpen(false)}>
-              Close
-            </button>
+            <div className="flex flex-wrap items-end gap-3">
+              <TableSearchField
+                value={auditLogSearch}
+                onChange={setAuditLogSearch}
+                placeholder="Search action, actor, entity, or details"
+              />
+              <button className="secondary-button" type="button" onClick={() => setIsAuditLogDialogOpen(false)}>
+                Close
+              </button>
+            </div>
           </div>
 
-          {!logs?.length ? (
+          {!filteredLogs.length ? (
             <EmptyState
-              title="No audit entries yet"
-              description="As soon as administrators make changes, the system activity log will appear here."
+              title={logs?.length ? "No audit entries match this search" : "No audit entries yet"}
             />
           ) : (
             <>
@@ -951,7 +1057,7 @@ export default function AdminPage() {
               <TablePagination
                 pagination={auditLogsPagination}
                 itemLabel="audit entries"
-                onExport={() => exportRowsAsCsv("admin-audit-log", (logs || []).map((log: any) => ({
+                onExport={() => exportRowsAsCsv("admin-audit-log", filteredLogs.map((log: any) => ({
                   when: formatDate(log.created_at),
                   action: log.action,
                   entity: log.entity,

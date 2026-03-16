@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { conferencesApi, membersApi, universitiesApi, unionsApi, usersApi } from "../api/endpoints";
-import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
+import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, TableSearchField, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatDate, formatNumber } from "../lib/format";
+import { matchesTableSearch } from "../lib/tableSearch";
 import { useUniversityScope } from "../lib/universityScope";
 import { useAuthStore } from "../store/auth";
 
@@ -253,7 +254,6 @@ export default function UsersPage() {
 
     return [...grouped.values()].sort((left, right) => left.label.localeCompare(right.label));
   }, [assignableConferences, assignableUniversities, assignableUnions]);
-  const usersPagination = usePagination(users);
   const lockedUniversityName = defaultUniversityId ? (universityLookup[defaultUniversityId] || currentUser?.university_name || "") : "";
   const lockedScopeLabel = lockedUniversityName || "Your university or campus";
 
@@ -271,6 +271,25 @@ export default function UsersPage() {
   const [isRecoveringPassword, setIsRecoveringPassword] = useState(false);
   const [prefillMember, setPrefillMember] = useState<any | null>(null);
   const [isLookingUpPrefill, setIsLookingUpPrefill] = useState(false);
+  const [search, setSearch] = useState("");
+  const filteredUsers = useMemo(() => {
+    return (users || []).filter((item: any) => matchesTableSearch(search, [
+      item.name,
+      item.email,
+      describeUserScope(item, universityLookup),
+      describeUserScopeType(item),
+      item.roles,
+      item.tenure_starts_on,
+      item.tenure_ends_on,
+      item.tenure_months,
+      item.is_active ? "active" : "inactive",
+      item.subject_to_tenure && isTenureExpired(item) ? "tenure ended" : "",
+      item.member_status,
+      item.donor_interest ? "donor interest" : "",
+      item.deletion_due_at
+    ]));
+  }, [search, universityLookup, users]);
+  const usersPagination = usePagination(filteredUsers);
 
   const selectedRole = form.roles[0] || "";
   const selectedScope = parseScopeValue(form.scope_value);
@@ -447,17 +466,23 @@ export default function UsersPage() {
       </div>
 
       <Panel className="space-y-5">
-        <div>
-          <p className="eyebrow">Current accounts</p>
-          <h3 className="text-xl font-semibold text-slate-950">Team access map</h3>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="eyebrow">Current accounts</p>
+            <h3 className="text-xl font-semibold text-slate-950">Team access map</h3>
+          </div>
+          <TableSearchField
+            value={search}
+            onChange={setSearch}
+            placeholder="Search name, email, scope, role, or status"
+          />
         </div>
 
         {pageError ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{pageError}</p> : null}
 
-        {!users?.length ? (
+        {!filteredUsers.length ? (
           <EmptyState
-            title="No users found"
-            description={canProvisionTeam ? "Use the top button to provision the first teammate or finance user in this scope." : "No recoverable users are visible in this scope."}
+            title={users?.length ? "No users match this search" : "No users found"}
           />
         ) : (
           <>
@@ -591,7 +616,7 @@ export default function UsersPage() {
             <TablePagination
               pagination={usersPagination}
               itemLabel="users"
-              onExport={canProvisionTeam ? () => exportRowsAsCsv("team-users", (users || []).map((item: any) => ({
+              onExport={canProvisionTeam ? () => exportRowsAsCsv("team-users", filteredUsers.map((item: any) => ({
                 name: item.name || "",
                 email: item.email || "",
                 scope: describeUserScope(item, universityLookup),

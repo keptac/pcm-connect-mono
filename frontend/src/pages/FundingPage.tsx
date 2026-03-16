@@ -3,9 +3,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { fundingApi, programsApi, universitiesApi } from "../api/endpoints";
 import { UniversitySelectOptions } from "../components/UniversitySelectOptions";
-import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
+import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, TableSearchField, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatCurrency, formatDate, formatNumber } from "../lib/format";
+import { matchesTableSearch } from "../lib/tableSearch";
 import { useUniversityScope } from "../lib/universityScope";
 
 const inflowCategories = ["Donation", "Zunde", "Offering", "Subscriptions", "Other"];
@@ -120,6 +121,7 @@ export default function FundingPage() {
   const [directionFilter, setDirectionFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [periodMode, setPeriodMode] = useState<"monthly" | "weekly">("monthly");
+  const [search, setSearch] = useState("");
 
   const selectedUniversityId = form.university_id && form.university_id !== HQ_SCOPE ? Number(form.university_id) : null;
   const isHqScope = form.university_id === HQ_SCOPE;
@@ -172,9 +174,25 @@ export default function FundingPage() {
       const matchesDirection = directionFilter === "all" || direction === directionFilter;
       const matchesCategory = categoryFilter === "all" || category === categoryFilter;
       const matchesAudience = financeView === "all" || financeView === "hq" || (programAudience ? matchesAudienceFilter(programAudience, financeView) : false);
-      return matchesDirection && matchesCategory && matchesAudience;
+      const matchesSearch = matchesTableSearch(search, [
+        entry.transaction_date,
+        entry.source_name,
+        entry.university_id ? (universityLookup[entry.university_id] || entry.university_name) : "PCM Office / National Office",
+        entry.program_id ? (programLookup[entry.program_id] || entry.program_name) : "General treasury",
+        programAudience,
+        direction,
+        category,
+        entry.category_detail,
+        entry.amount,
+        entry.currency,
+        entry.reporting_window,
+        entry.channel,
+        entry.designation,
+        entry.notes
+      ]);
+      return matchesDirection && matchesCategory && matchesAudience && matchesSearch;
     });
-  }, [categoryFilter, directionFilter, financeView, programMetaLookup, scopeFunding]);
+  }, [categoryFilter, directionFilter, financeView, programLookup, programMetaLookup, scopeFunding, search, universityLookup]);
   const fundingPagination = usePagination(filteredFunding);
 
   if (!canView) {
@@ -452,7 +470,12 @@ export default function FundingPage() {
             <p className="eyebrow">Treasury ledger</p>
             <h3 className="text-xl font-semibold text-slate-950">Receipts and expenditures</h3>
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-3">
+            <TableSearchField
+              value={search}
+              onChange={setSearch}
+              placeholder="Search source, campus, program, category, or notes"
+            />
             <label className="field-shell min-w-[180px]">
               <span className="field-label">Direction</span>
               <select className="field-input" value={directionFilter} onChange={(event) => setDirectionFilter(event.target.value)}>
@@ -475,8 +498,7 @@ export default function FundingPage() {
 
         {filteredFunding.length === 0 ? (
           <EmptyState
-            title="No treasury records yet"
-            description={canManageRecords ? "Record a receipt or expenditure to create the university or campus cash history." : "Treasury records will appear here once finance officers or super admins submit them."}
+            title={funding?.length ? "No treasury records match this search" : "No treasury records yet"}
           />
         ) : (
           <>

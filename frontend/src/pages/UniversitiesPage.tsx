@@ -3,9 +3,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate } from "react-router-dom";
 
 import { conferencesApi, universitiesApi } from "../api/endpoints";
-import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
+import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, TableSearchField, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatNumber } from "../lib/format";
+import { matchesTableSearch } from "../lib/tableSearch";
 import { useUniversityScope } from "../lib/universityScope";
 import { useAuthStore } from "../store/auth";
 
@@ -45,12 +46,33 @@ export default function UniversitiesPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [form, setForm] = useState(initialForm);
+  const [deleteError, setDeleteError] = useState("");
+  const [isDeletingId, setIsDeletingId] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
 
   const currentList = useMemo(() => {
     if (roles.includes("super_admin")) return universities || [];
     return (universities || []).filter((item: any) => item.id === user?.university_id);
   }, [roles, universities, user?.university_id]);
-  const universitiesPagination = usePagination(currentList);
+  const filteredUniversities = useMemo(() => {
+    return currentList.filter((university: any) => matchesTableSearch(search, [
+      university.name,
+      university.short_code,
+      university.conference_name,
+      university.union_name,
+      university.city,
+      university.country,
+      university.region,
+      university.mission_focus,
+      university.contact_name,
+      university.contact_email,
+      university.contact_phone,
+      university.program_count,
+      university.member_count,
+      university.is_active ? "active" : "inactive"
+    ]));
+  }, [currentList, search]);
+  const universitiesPagination = usePagination(filteredUniversities);
 
   if (!canView) {
     return <Navigate to="/" replace />;
@@ -84,6 +106,11 @@ export default function UniversitiesPage() {
     resetForm();
   }
 
+  function closeDeleteError() {
+    setDeleteError("");
+    setIsDeletingId(null);
+  }
+
   function openCreateForm() {
     resetForm();
     setIsFormOpen(true);
@@ -109,15 +136,21 @@ export default function UniversitiesPage() {
       </div>
 
       <Panel className="space-y-5">
-        <div>
-          <p className="eyebrow">Directory table</p>
-          <h3 className="text-xl font-semibold text-slate-950">Profiles in the network</h3>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="eyebrow">Directory table</p>
+            <h3 className="text-xl font-semibold text-slate-950">Profiles in the network</h3>
+          </div>
+          <TableSearchField
+            value={search}
+            onChange={setSearch}
+            placeholder="Search campus, conference, union, location, or contact"
+          />
         </div>
 
-        {currentList.length === 0 ? (
+        {filteredUniversities.length === 0 ? (
           <EmptyState
-            title="No universities or campuses found"
-            description="Enrol a university or campus to start organizing programs and funding around each unit."
+            title={currentList.length ? "No universities or campuses match this search" : "No universities or campuses found"}
           />
         ) : (
           <>
@@ -167,10 +200,18 @@ export default function UniversitiesPage() {
                             <TableActionButton
                               label="Delete campus"
                               tone="delete"
+                              disabled={isDeletingId === university.id}
                               onClick={async () => {
                                 if (!window.confirm(`Delete ${university.name}? This cannot be undone.`)) return;
-                                await universitiesApi.delete(university.id);
-                                await client.invalidateQueries({ queryKey: ["universities"] });
+                                setIsDeletingId(university.id);
+                                try {
+                                  await universitiesApi.delete(university.id);
+                                  await client.invalidateQueries({ queryKey: ["universities"] });
+                                } catch (error: any) {
+                                  setDeleteError(error?.response?.data?.detail || "Unable to delete this university or campus right now.");
+                                } finally {
+                                  setIsDeletingId((current) => (current === university.id ? null : current));
+                                }
                               }}
                             />
                           ) : null}
@@ -184,7 +225,7 @@ export default function UniversitiesPage() {
             <TablePagination
               pagination={universitiesPagination}
               itemLabel="campuses"
-              onExport={() => exportRowsAsCsv("universities-and-campuses", currentList.map((university: any) => ({
+              onExport={() => exportRowsAsCsv("universities-and-campuses", filteredUniversities.map((university: any) => ({
                 university_or_campus: university.name,
                 short_code: university.short_code || "",
                 conference: university.conference_name || "",
@@ -325,6 +366,26 @@ export default function UniversitiesPage() {
               <button className="secondary-button" type="button" onClick={resetForm}>Reset</button>
             </div>
           </form>
+        </div>
+      </ModalDialog>
+
+      <ModalDialog open={Boolean(deleteError)} onClose={closeDeleteError}>
+        <div className="space-y-5">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="eyebrow">Delete blocked</p>
+              <h3 className="text-xl font-semibold text-slate-950">University or campus could not be deleted</h3>
+            </div>
+            <button className="secondary-button" type="button" onClick={closeDeleteError}>Close</button>
+          </div>
+
+          <div className="rounded-[16px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {deleteError}
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <button className="primary-button" type="button" onClick={closeDeleteError}>OK</button>
+          </div>
         </div>
       </ModalDialog>
     </div>

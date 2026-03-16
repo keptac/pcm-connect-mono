@@ -1,9 +1,11 @@
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { adminApi } from "../api/endpoints";
-import { EmptyState, PageHeader, Panel, StatusBadge, TablePagination, usePagination } from "../components/ui";
+import { EmptyState, PageHeader, Panel, StatusBadge, TablePagination, TableSearchField, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatDate } from "../lib/format";
+import { matchesTableSearch } from "../lib/tableSearch";
 import { useAuthStore } from "../store/auth";
 
 function formatActorLabel(log: any) {
@@ -17,12 +19,25 @@ function formatActorLabel(log: any) {
 export default function AuditLogsPage() {
   const { user } = useAuthStore();
   const isAdmin = user?.roles?.includes("super_admin");
+  const [search, setSearch] = useState("");
   const { data } = useQuery({
     queryKey: ["audit-logs"],
     queryFn: adminApi.auditLogs,
     enabled: isAdmin
   });
-  const auditPagination = usePagination(data);
+  const filteredLogs = useMemo(() => {
+    return (data || []).filter((log: any) => matchesTableSearch(search, [
+      log.id,
+      log.action,
+      log.entity,
+      log.entity_id,
+      formatActorLabel(log).primary,
+      formatActorLabel(log).secondary,
+      formatDate(log.created_at),
+      log.meta
+    ]));
+  }, [data, search]);
+  const auditPagination = usePagination(filteredLogs);
 
   if (!isAdmin) {
     return <Panel><p className="text-sm text-slate-600">Admin access required.</p></Panel>;
@@ -37,10 +52,17 @@ export default function AuditLogsPage() {
       />
 
       <Panel className="space-y-5">
-        {!data?.length ? (
+        <div className="flex justify-end">
+          <TableSearchField
+            value={search}
+            onChange={setSearch}
+            placeholder="Search action, actor, entity, or metadata"
+          />
+        </div>
+
+        {!filteredLogs.length ? (
           <EmptyState
-            title="No audit log entries"
-            description="Administrative actions will appear here automatically once the system starts being used."
+            title={data?.length ? "No audit entries match this search" : "No audit log entries"}
           />
         ) : (
           <>
@@ -85,7 +107,7 @@ export default function AuditLogsPage() {
             <TablePagination
               pagination={auditPagination}
               itemLabel="entries"
-              onExport={() => exportRowsAsCsv("system-activity-log", (data || []).map((log: any) => ({
+              onExport={() => exportRowsAsCsv("system-activity-log", filteredLogs.map((log: any) => ({
                 id: log.id,
                 action: log.action,
                 entity: log.entity,

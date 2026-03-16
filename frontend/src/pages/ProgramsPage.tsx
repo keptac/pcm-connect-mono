@@ -4,9 +4,10 @@ import { useSearchParams } from "react-router-dom";
 
 import { mandatoryProgramsApi, programUpdatesApi, programsApi, reportingPeriodsApi, universitiesApi } from "../api/endpoints";
 import { UniversitySelectOptions } from "../components/UniversitySelectOptions";
-import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
+import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, TableSearchField, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatCurrency, formatDate, formatNumber } from "../lib/format";
+import { matchesTableSearch } from "../lib/tableSearch";
 import { useUniversityScope } from "../lib/universityScope";
 import BroadcastsPage from "./BroadcastsPage";
 import CalendarPage from "./CalendarPage";
@@ -172,10 +173,37 @@ export default function ProgramsPage() {
   const [form, setForm] = useState(() => buildInitialForm(defaultUniversityId, defaultProgramAudience));
   const [statusFilter, setStatusFilter] = useState("all");
   const [coveragePeriod, setCoveragePeriod] = useState(currentReportingPeriod);
+  const [portfolioSearch, setPortfolioSearch] = useState("");
+  const [coverageSearch, setCoverageSearch] = useState("");
 
   const filteredPrograms = useMemo(() => {
-    return (programs || []).filter((program: any) => statusFilter === "all" || program.status === statusFilter);
-  }, [programs, statusFilter]);
+    return (programs || []).filter((program: any) => {
+      const matchesStatus = statusFilter === "all" || program.status === statusFilter;
+      const relatedUpdates = (updates || []).filter((update: any) => update.program_id === program.id);
+      const reportStatus = isProgramAwaitingReport(program, relatedUpdates.length)
+        ? "Report overdue"
+        : relatedUpdates.length > 0
+          ? "Submitted"
+          : "Awaiting report";
+      const matchesSearch = matchesTableSearch(portfolioSearch, [
+        program.name,
+        program.category,
+        program.manager_name,
+        program.description,
+        program.university_name || NETWORK_LABEL,
+        !program.university_id ? "Network-wide ministry program" : `${program.level === "Chapter" ? "Campus" : (program.level || "Campus")} level`,
+        program.audience,
+        program.status,
+        program.beneficiaries_served,
+        program.target_beneficiaries,
+        program.annual_budget,
+        relatedUpdates.length,
+        reportStatus,
+        formatDate(program.last_update_at)
+      ]);
+      return matchesStatus && matchesSearch;
+    });
+  }, [portfolioSearch, programs, statusFilter, updates]);
   const programPagination = usePagination(filteredPrograms);
   const mandatoryEventCatalog = useMemo(() => {
     const unique = new Map<string, any>();
@@ -286,7 +314,21 @@ export default function ProgramsPage() {
     () => coverageRows.filter((row: any) => row.missingCount > 0),
     [coverageRows]
   );
-  const coveragePagination = usePagination(incompleteCoverageRows);
+  const filteredCoverageRows = useMemo(() => {
+    return incompleteCoverageRows.filter((row: any) => matchesTableSearch(coverageSearch, [
+      row.name,
+      row.short_code,
+      row.region,
+      row.conference_name,
+      row.union_name,
+      row.scheduledMandatory,
+      row.missingMandatory,
+      row.scheduledCount,
+      row.missingCount,
+      formatDate(row.latestScheduledDate)
+    ]));
+  }, [coverageSearch, incompleteCoverageRows]);
+  const coveragePagination = usePagination(filteredCoverageRows);
 
   if (!viewOptions.length) {
     return <Panel><p className="text-sm text-slate-600">Access denied.</p></Panel>;
@@ -426,18 +468,25 @@ export default function ProgramsPage() {
           </div>
 
           <Panel className="space-y-5">
-            <div className="flex items-end justify-between gap-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <h4 className="text-lg font-semibold text-slate-950">Campuses missing scheduled mandatory programs</h4>
               </div>
-              <label className="field-shell min-w-[180px]">
-                <span className="field-label">Reporting period</span>
-                <select className="field-input" value={coveragePeriod} onChange={(event) => setCoveragePeriod(event.target.value)}>
-                  {coveragePeriodOptions.map((period) => (
-                    <option key={period.code} value={period.code}>{period.label}</option>
-                  ))}
-                </select>
-              </label>
+              <div className="flex flex-wrap items-end gap-3">
+                <TableSearchField
+                  value={coverageSearch}
+                  onChange={setCoverageSearch}
+                  placeholder="Search campus, conference, union, or coverage gaps"
+                />
+                <label className="field-shell min-w-[180px]">
+                  <span className="field-label">Reporting period</span>
+                  <select className="field-input" value={coveragePeriod} onChange={(event) => setCoveragePeriod(event.target.value)}>
+                    {coveragePeriodOptions.map((period) => (
+                      <option key={period.code} value={period.code}>{period.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             </div>
 
             {mandatoryEventCatalog.length === 0 ? (
@@ -445,10 +494,9 @@ export default function ProgramsPage() {
                 title="No mandatory programs configured"
                 description="Create mandatory event programs in Admin first, then this compliance view will show campus scheduling gaps."
               />
-            ) : incompleteCoverageRows.length === 0 ? (
+            ) : filteredCoverageRows.length === 0 ? (
               <EmptyState
-                title="All campuses are covered"
-                description={`Every university or campus in this view has dated ministry programs for all mandatory events in ${selectedCoveragePeriod?.label || coveragePeriod}.`}
+                title={incompleteCoverageRows.length ? "No campuses match this search" : "All campuses are covered"}
               />
             ) : (
               <>
@@ -498,7 +546,7 @@ export default function ProgramsPage() {
                 <TablePagination
                   pagination={coveragePagination}
                   itemLabel="campuses"
-                  onExport={() => exportRowsAsCsv("mandatory-program-coverage", incompleteCoverageRows.map((campus: any) => ({
+                  onExport={() => exportRowsAsCsv("mandatory-program-coverage", filteredCoverageRows.map((campus: any) => ({
                     reporting_period: selectedCoveragePeriod?.label || coveragePeriod,
                     university_or_campus: campus.name,
                     short_code: campus.short_code || "",
@@ -528,26 +576,32 @@ export default function ProgramsPage() {
           </div>
 
           <Panel className="space-y-5">
-            <div className="flex items-end justify-between gap-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <h4 className="text-lg font-semibold text-slate-950">Portfolio by status</h4>
               </div>
-              <label className="field-shell min-w-[180px]">
-                <span className="field-label">Status filter</span>
-                <select className="field-input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                  <option value="all">All ministry programs</option>
-                  <option value="active">Active</option>
-                  <option value="planning">Planning</option>
-                  <option value="paused">Paused</option>
-                  <option value="archived">Archived</option>
-                </select>
-              </label>
+              <div className="flex flex-wrap items-end gap-3">
+                <TableSearchField
+                  value={portfolioSearch}
+                  onChange={setPortfolioSearch}
+                  placeholder="Search program, campus, category, manager, or status"
+                />
+                <label className="field-shell min-w-[180px]">
+                  <span className="field-label">Status filter</span>
+                  <select className="field-input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                    <option value="all">All ministry programs</option>
+                    <option value="active">Active</option>
+                    <option value="planning">Planning</option>
+                    <option value="paused">Paused</option>
+                    <option value="archived">Archived</option>
+                  </select>
+                </label>
+              </div>
             </div>
 
             {filteredPrograms.length === 0 ? (
               <EmptyState
-                title="No ministry programs yet"
-                description="Create a ministry program to start tracking beneficiaries, budgets, and updates."
+                title={programs?.length ? "No ministry programs match this search" : "No ministry programs yet"}
               />
             ) : (
               <>

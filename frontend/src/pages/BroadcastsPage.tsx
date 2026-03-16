@@ -3,9 +3,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { broadcastsApi, programsApi, universitiesApi } from "../api/endpoints";
 import { UniversitySelectOptions, groupUniversitiesByUnion } from "../components/UniversitySelectOptions";
-import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
+import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, TableSearchField, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatDateTime, formatNumber } from "../lib/format";
+import { matchesTableSearch } from "../lib/tableSearch";
 import { useUniversityScope } from "../lib/universityScope";
 
 const visibilityOptions = ["network", "targeted"];
@@ -56,6 +57,7 @@ export default function BroadcastsPage({ embedded = false }: { embedded?: boolea
   const [form, setForm] = useState(() => buildInitialForm(defaultUniversityId));
   const [ownershipFilter, setOwnershipFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [search, setSearch] = useState("");
 
   const { data: broadcasts } = useQuery({
     queryKey: ["broadcasts", scopeKey],
@@ -88,14 +90,29 @@ export default function BroadcastsPage({ embedded = false }: { embedded?: boolea
           (ownershipFilter === "hosted" && isHosted) ||
           (ownershipFilter === "invited" && !isHosted);
         const matchesStatus = statusFilter === "all" || broadcast.status === statusFilter || broadcast.my_invite_status === statusFilter;
-        return matchesOwnership && matchesStatus;
+        const matchesSearch = matchesTableSearch(search, [
+          broadcast.title,
+          broadcast.summary,
+          broadcast.university_name,
+          broadcast.program_name,
+          broadcast.venue,
+          broadcast.visibility,
+          broadcast.status,
+          broadcast.my_invite_status,
+          broadcast.invites,
+          broadcast.contact_name,
+          broadcast.contact_email,
+          formatDateTime(broadcast.starts_at),
+          formatDateTime(broadcast.ends_at)
+        ]);
+        return matchesOwnership && matchesStatus && matchesSearch;
       })
       .sort((left: any, right: any) => {
         const leftTime = left.starts_at ? new Date(left.starts_at).getTime() : 0;
         const rightTime = right.starts_at ? new Date(right.starts_at).getTime() : 0;
         return leftTime - rightTime;
       });
-  }, [broadcasts, hostScopeUniversityId, ownershipFilter, statusFilter]);
+  }, [broadcasts, hostScopeUniversityId, ownershipFilter, search, statusFilter]);
   const broadcastsPagination = usePagination(filteredBroadcasts);
 
   if (!canView) {
@@ -209,6 +226,12 @@ export default function BroadcastsPage({ embedded = false }: { embedded?: boolea
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <TableSearchField
+              value={search}
+              onChange={setSearch}
+              placeholder="Search title, host, venue, program, or invite"
+              className="min-w-[240px]"
+            />
             <label className="field-shell min-w-[150px]">
               <span className="field-label">Ownership</span>
               <select className="field-input" value={ownershipFilter} onChange={(event) => setOwnershipFilter(event.target.value)}>
@@ -233,8 +256,7 @@ export default function BroadcastsPage({ embedded = false }: { embedded?: boolea
 
         {filteredBroadcasts.length === 0 ? (
           <EmptyState
-            title="No broadcasts yet"
-            description="Create a network-wide or targeted program broadcast to invite other campuses into the activity."
+            title={broadcasts?.length ? "No broadcasts match this search" : "No broadcasts yet"}
           />
         ) : (
           <>

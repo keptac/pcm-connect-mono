@@ -3,9 +3,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { mandatoryProgramsApi, programUpdatesApi, reportingPeriodsApi, universitiesApi } from "../api/endpoints";
 import { UniversitySelectOptions } from "../components/UniversitySelectOptions";
-import { EmptyState, MetricCard, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
+import { EmptyState, MetricCard, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, TableSearchField, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatCurrency, formatDate, formatNumber } from "../lib/format";
+import { matchesTableSearch } from "../lib/tableSearch";
 import { useUniversityScope } from "../lib/universityScope";
 
 function isPcmOfficeUniversity(university?: { name?: string | null } | null) {
@@ -119,6 +120,7 @@ export default function UpdatesPage() {
   const [isDownloadingPack, setIsDownloadingPack] = useState(false);
   const [isDownloadingConsolidated, setIsDownloadingConsolidated] = useState(false);
   const [downloadingUpdateId, setDownloadingUpdateId] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
 
   const defaultReportingPeriod = useMemo(() => {
     return findCurrentReportingPeriodCode(reportingPeriods);
@@ -135,8 +137,31 @@ export default function UpdatesPage() {
   }, [universities]);
 
   const filteredUpdates = useMemo(() => {
-    return (updates || []).filter((item: any) => periodFilter === "all" || item.reporting_period === periodFilter);
-  }, [periodFilter, updates]);
+    return (updates || []).filter((item: any) => {
+      const attachmentGroups = splitAttachments(item.attachments);
+      const matchesPeriod = periodFilter === "all" || item.reporting_period === periodFilter;
+      const matchesSearch = matchesTableSearch(search, [
+        item.event_name,
+        item.title,
+        item.event_detail,
+        item.university_name,
+        item.program_name,
+        item.reporting_period,
+        item.reporting_period_label,
+        item.reporting_date,
+        item.summary,
+        item.outcomes,
+        item.challenges,
+        item.next_steps,
+        item.beneficiaries_reached,
+        item.volunteers_involved,
+        item.funds_used,
+        attachmentGroups.supporting,
+        attachmentGroups.minutes
+      ]);
+      return matchesPeriod && matchesSearch;
+    });
+  }, [periodFilter, search, updates]);
   const updatesPagination = usePagination(filteredUpdates);
   const selectableEvents = useMemo(() => {
     return (mandatoryEvents || []).filter((item: any) => item.is_active || item.name === form.event_name);
@@ -327,26 +352,32 @@ export default function UpdatesPage() {
 
       <div className="grid gap-6">
         <Panel className="space-y-5">
-          <div className="flex items-end justify-between gap-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="eyebrow">Update history</p>
               <h3 className="text-xl font-semibold text-slate-950">What campuses are reporting</h3>
             </div>
-            <label className="field-shell min-w-[180px]">
-              <span className="field-label">Reporting period</span>
-              <select className="field-input" value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)}>
-                <option value="all">All periods</option>
-                {reportingPeriodsForFilter.map((period) => (
-                  <option key={period.code} value={period.code}>{period.label}</option>
-                ))}
-              </select>
-            </label>
+            <div className="flex flex-wrap items-end gap-3">
+              <TableSearchField
+                value={search}
+                onChange={setSearch}
+                placeholder="Search event, campus, period, narrative, or minutes"
+              />
+              <label className="field-shell min-w-[180px]">
+                <span className="field-label">Reporting period</span>
+                <select className="field-input" value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)}>
+                  <option value="all">All periods</option>
+                  {reportingPeriodsForFilter.map((period) => (
+                    <option key={period.code} value={period.code}>{period.label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </div>
 
           {filteredUpdates.length === 0 ? (
             <EmptyState
-              title="No updates in this period"
-              description="Once universities and campuses submit updates, they will show up here in a narrative timeline."
+              title={updates?.length ? "No updates match this search" : "No updates in this period"}
             />
           ) : (
             <>
