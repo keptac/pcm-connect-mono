@@ -437,7 +437,7 @@ def _build_attendance_chart(update: ProgramUpdate, styles):
     chart_series = [
         ("Expected", expected, PCM_BLUE),
         ("Actual", actual, PCM_RED),
-        ("Volunteers", volunteers, PCM_VIOLET),
+        ("Missionaries", volunteers, PCM_VIOLET),
     ]
     maximum = max([value for _, value, _ in chart_series] + [1])
     bar_width = 14 * mm
@@ -507,7 +507,7 @@ def _build_attendance_chart(update: ProgramUpdate, styles):
 
     card = Table(
         [
-            [Paragraph("Attendance and mobilization", styles["chartTitle"])],
+            [Paragraph("Visitor reach and missionary mobilization", styles["chartTitle"])],
             [content],
         ],
         colWidths=[CONTENT_WIDTH],
@@ -536,7 +536,7 @@ def _build_context_table(update: ProgramUpdate, styles):
         ("Program audience", update.program.audience if update.program and update.program.audience else "General"),
         ("Schedule", _program_schedule(update)),
         ("Duration", _format_duration(update.program.duration_weeks if update.program else None)),
-        ("Expected attendance / reach", _format_number(expected) if expected else "Not configured"),
+        ("Expected visitors / reach", _format_number(expected) if expected else "Not configured"),
     ]
     table = Table(
         [
@@ -967,11 +967,11 @@ def _build_cover_metric_items(metrics: dict) -> list[dict]:
         {
             "label": "Actual reach",
             "value": _format_number(metrics["actual"]),
-            "helper": "Reported attendance or participation.",
+            "helper": "Reported visitors or participation.",
             "background": colors.HexColor("#FFF1F2"),
         },
         {
-            "label": "Volunteers",
+            "label": "Missionaries",
             "value": _format_number(metrics["volunteers"]),
             "helper": _volunteer_helper_text(metrics),
             "background": colors.HexColor("#F3EEFF"),
@@ -990,9 +990,9 @@ def _build_cover_metric_items(metrics: dict) -> list[dict]:
     elif metrics["attendees_per_volunteer"] is not None:
         items.append(
             {
-                "label": "Volunteer coverage",
+                "label": "Missionary coverage",
                 "value": _format_coverage(metrics["attendees_per_volunteer"]),
-                "helper": "Volunteers relative to reported turnout.",
+                "helper": "Missionaries relative to reported visitors.",
                 "background": colors.HexColor("#EFFAF5"),
             }
         )
@@ -1013,17 +1013,17 @@ def _build_detailed_metric_items(metrics: dict) -> list[dict]:
         {
             "label": "Expected",
             "value": _format_number(metrics["expected"]) if metrics["expected"] else "Not set",
-            "helper": "Planned attendance or reach.",
+            "helper": "Planned visitors or reach.",
             "background": colors.HexColor("#EDF4FF"),
         },
         {
             "label": "Actual",
             "value": _format_number(metrics["actual"]),
-            "helper": "Reported turnout captured in the update.",
+            "helper": "Reported visitors captured in the update.",
             "background": colors.HexColor("#FFF1F2"),
         },
         {
-            "label": "Volunteers",
+            "label": "Missionaries",
             "value": _format_number(metrics["volunteers"]),
             "helper": _volunteer_helper_text(metrics),
             "background": colors.HexColor("#F3EEFF"),
@@ -1053,7 +1053,7 @@ def _build_detailed_metric_items(metrics: dict) -> list[dict]:
             {
                 "label": "Coverage",
                 "value": _format_coverage(metrics["attendees_per_volunteer"]),
-                "helper": "Average attendees supported by each volunteer.",
+                "helper": "Average visitors supported by each missionary.",
                 "background": colors.HexColor("#FFF8E7"),
             }
         )
@@ -1265,13 +1265,13 @@ def _build_report_insight(metrics: dict, include_funds: bool = True) -> str:
 
 def _volunteer_helper_text(metrics: dict) -> str:
     if metrics["attendees_per_volunteer"] is None:
-        return "No volunteers were recorded for this update."
+        return "No missionaries were recorded for this update."
     rounded = round(metrics["attendees_per_volunteer"], 1)
     if float(rounded).is_integer():
         ratio_value = str(int(rounded))
     else:
         ratio_value = f"{rounded:.1f}"
-    return f"About 1 volunteer supported every {ratio_value} attendees."
+    return f"About 1 missionary supported every {ratio_value} visitors."
 
 
 def _variance_helper_text(metrics: dict) -> str:

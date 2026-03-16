@@ -12,6 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.api.routes.program_updates import download_consolidated_report_pdf
 from app.db.base import Base
 from app.models import Conference, Program, ProgramUpdate, University, User
+from app.services.program_update_consolidated_exports import _build_consolidated_narrative_sections
+from app.services.program_update_exports import _build_cover_metric_items, _build_detailed_metric_items, _build_styles, _volunteer_helper_text
 
 
 @pytest.fixture()
@@ -93,3 +95,50 @@ def test_consolidated_report_pdf_downloads_combined_pdf(db_session: Session):
     assert response.headers["content-disposition"] == 'attachment; filename="impact-report-consolidated_all-campuses_2026-Q1.pdf"'
     assert body.startswith(b"%PDF")
     assert len(body) > 1000
+
+
+def test_consolidated_narrative_sections_flatten_all_narrative_groups():
+    styles = _build_styles()
+    summary = {
+        "section_entries": {
+            "summary": [{"meta": "Campus D | Summary Event | 2026-Q1", "text": "Highlight one"}],
+            "outcomes": [{"meta": "Campus A | Week of Prayer | 2026-Q1", "text": "Outcome one"}],
+            "challenges": [{"meta": "Campus B | Evangelism Campaign | 2026-Q1", "text": "Challenge one"}],
+            "next_steps": [{"meta": "Campus C | Discipleship Program | 2026-Q1", "text": "Next step one"}],
+        }
+    }
+
+    sections = _build_consolidated_narrative_sections(summary, styles)
+    bullet_cards = [item for item in sections if item.__class__.__name__ == "Table"]
+
+    assert len(bullet_cards) == 4
+    assert bullet_cards[0]._cellvalues[0][0].text == "&bull; Highlight one"
+    assert bullet_cards[1]._cellvalues[0][0].text == "&bull; Outcome one"
+    assert bullet_cards[2]._cellvalues[0][0].text == "&bull; Challenge one"
+    assert bullet_cards[3]._cellvalues[0][0].text == "&bull; Next step one"
+
+
+def test_report_wording_uses_missionary_and_visitor_labels():
+    metrics_without_target = {
+        "expected": 0,
+        "actual": 100,
+        "volunteers": 10,
+        "funds_used": 50.0,
+        "variance": None,
+        "achievement_rate": None,
+        "attendees_per_volunteer": 10.0,
+    }
+    cover_items = _build_cover_metric_items(metrics_without_target)
+
+    assert cover_items[1]["helper"] == "Reported visitors or participation."
+    assert cover_items[2]["label"] == "Missionaries"
+    assert cover_items[3]["label"] == "Missionary coverage"
+    assert cover_items[3]["helper"] == "Missionaries relative to reported visitors."
+
+    detailed_items = _build_detailed_metric_items(metrics_without_target)
+
+    assert detailed_items[0]["helper"] == "Planned visitors or reach."
+    assert detailed_items[1]["helper"] == "Reported visitors captured in the update."
+    assert detailed_items[2]["label"] == "Missionaries"
+    assert detailed_items[3]["helper"] == "Average visitors supported by each missionary."
+    assert _volunteer_helper_text(metrics_without_target) == "About 1 missionary supported every 10 visitors."

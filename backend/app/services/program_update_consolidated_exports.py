@@ -447,9 +447,9 @@ def _build_consolidated_metric_cards(summary: dict, styles):
             "background": colors.HexColor("#FFF1F2"),
         },
         {
-            "label": "Volunteers",
+            "label": "Missionaries",
             "value": _format_number(summary["metrics"]["volunteers"]),
-            "helper": "Combined volunteer involvement recorded in reports.",
+            "helper": "Combined missionary involvement recorded in reports.",
             "background": colors.HexColor("#EFFAF5"),
         },
         {
@@ -480,7 +480,7 @@ def _build_consolidated_activity_chart(summary: dict, styles):
     chart_series = [
         ("Expected", metrics["expected"], PCM_BLUE),
         ("Actual", metrics["actual"], PCM_RED),
-        ("Volunteers", metrics["volunteers"], PCM_VIOLET),
+        ("Missionaries", metrics["volunteers"], PCM_VIOLET),
     ]
     maximum = max([value for _, value, _ in chart_series] + [1])
     bar_width = 14 * mm
@@ -806,15 +806,14 @@ def _build_consolidated_narrative_sections(summary: dict, styles):
             [
                 Paragraph(heading, styles["section"]),
                 Paragraph(
-                    "Combined from all included university and campus reports in the current scope.",
+                    "Combined into a single list across all included university and campus reports.",
                     styles["bodyMuted"],
                 ),
                 Spacer(1, 6),
+                _build_narrative_bullet_list_card(entries, styles, background),
+                Spacer(1, 8),
             ]
         )
-        for entry in entries:
-            sections.append(_build_narrative_entry_card(entry, styles, background))
-            sections.append(Spacer(1, 8))
 
     if not sections:
         sections.append(Paragraph("No narrative fields were available across the selected campus reports.", styles["bodyMuted"]))
@@ -822,26 +821,26 @@ def _build_consolidated_narrative_sections(summary: dict, styles):
     return sections
 
 
-def _build_narrative_entry_card(entry: dict, styles, background):
-    card = Table(
-        [
-            [Paragraph(_safe_text(entry["meta"]), styles["insightTitle"])],
-            [Paragraph(_safe_text(entry["text"]), styles["body"])],
-        ],
-        colWidths=[174 * mm],
-    )
-    card.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -1), background),
-                ("BOX", (0, 0), (-1, -1), 1, PCM_BORDER),
-                ("LEFTPADDING", (0, 0), (-1, -1), 12),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-                ("TOPPADDING", (0, 0), (-1, -1), 10),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-            ]
-        )
-    )
+def _build_narrative_bullet_list_card(entries: list[dict], styles, background):
+    bullet_style = styles["body"].clone("consolidatedNarrativeBullet")
+    bullet_style.leftIndent = 12
+    bullet_style.firstLineIndent = -10
+    rows = [[Paragraph(f"&bull; {_safe_text(entry['text'])}", bullet_style)] for entry in entries]
+
+    style_rules = [
+        ("BACKGROUND", (0, 0), (-1, -1), background),
+        ("BOX", (0, 0), (-1, -1), 1, PCM_BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+    ]
+    if len(rows) > 1:
+        style_rules.append(("LINEBELOW", (0, 0), (-1, -2), 0.6, PCM_BORDER))
+
+    card = Table(rows, colWidths=[174 * mm])
+    card.setStyle(TableStyle(style_rules))
     return card
 
 

@@ -118,10 +118,10 @@ def _metric_cards(update, expected_attendance: int, actual_attendance: int) -> T
         Paragraph(_percentage(actual_attendance, expected_attendance), value_style),
         Paragraph(str(update.volunteers_involved or 0), value_style),
     ], [
-        Paragraph("Expected attendance", label_style),
-        Paragraph("Actual attendance", label_style),
+        Paragraph("Expected visitors", label_style),
+        Paragraph("Actual visitors", label_style),
         Paragraph("Attainment", label_style),
-        Paragraph("Volunteers", label_style),
+        Paragraph("Missionaries", label_style),
     ]]
     table = Table(rows, colWidths=[4.1 * cm] * 4)
     table.setStyle(TableStyle([
@@ -141,7 +141,7 @@ def _metric_cards(update, expected_attendance: int, actual_attendance: int) -> T
 
 def _attendance_chart(expected_attendance: int, actual_attendance: int, volunteers: int, funds_used: float | None) -> Drawing:
     values = [max(expected_attendance, 0), max(actual_attendance, 0), max(volunteers, 0)]
-    labels = ["Expected", "Actual", "Volunteers"]
+    labels = ["Expected", "Actual", "Missionaries"]
     if funds_used:
         values.append(float(funds_used))
         labels.append("Funds used")
@@ -178,7 +178,7 @@ def _attendance_chart(expected_attendance: int, actual_attendance: int, voluntee
         bar_height = (value / chart.valueAxis.valueMax) * chart.height if chart.valueAxis.valueMax else 0
         drawing.add(String(x_position, chart.y + bar_height + 8, f"{int(round(value))}", fontName="Helvetica-Bold", fontSize=8, fillColor=colors.HexColor("#0f172a"), textAnchor="middle"))
 
-    drawing.add(String(8.1 * cm, 6.65 * cm, "Attendance and participation snapshot", fontName="Helvetica-Bold", fontSize=10, fillColor=colors.HexColor("#123d77"), textAnchor="middle"))
+    drawing.add(String(8.1 * cm, 6.65 * cm, "Visitor reach and participation snapshot", fontName="Helvetica-Bold", fontSize=10, fillColor=colors.HexColor("#123d77"), textAnchor="middle"))
     return drawing
 
 
@@ -221,8 +221,8 @@ def _details_table(update, expected_attendance: int) -> Table:
         ["Linked program", update.program.name if update.program else "No linked ministry program"],
         ["Reporting period", update.reporting_period],
         ["Submitted", update.created_at.strftime("%b %d, %Y") if update.created_at else "Not recorded"],
-        ["Expected attendance", str(expected_attendance)],
-        ["Actual attendance", str(update.beneficiaries_reached or 0)],
+        ["Expected visitors", str(expected_attendance)],
+        ["Actual visitors", str(update.beneficiaries_reached or 0)],
         ["Funds used", _currency(update.funds_used)],
     ]
     table = Table(rows, colWidths=[4.5 * cm, 11.2 * cm])
