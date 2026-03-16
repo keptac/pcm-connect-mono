@@ -1,4 +1,5 @@
 import asyncio
+import json
 import sys
 from datetime import date
 from pathlib import Path
@@ -6,10 +7,13 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from starlette.requests import Request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.api.routes.program_updates import download_consolidated_report_pdf
+from fastapi import HTTPException
+
+from app.api.routes.program_updates import _attachment_response_rows, _ensure_meeting_update_has_minutes, download_consolidated_report_pdf
 from app.db.base import Base
 from app.models import Conference, Program, ProgramUpdate, University, User
 from app.services.program_update_consolidated_exports import _build_consolidated_narrative_sections
@@ -142,3 +146,75 @@ def test_report_wording_uses_missionary_and_visitor_labels():
     assert detailed_items[2]["label"] == "Missionaries"
     assert detailed_items[3]["helper"] == "Average visitors supported by each missionary."
     assert _volunteer_helper_text(metrics_without_target) == "About 1 missionary supported every 10 visitors."
+
+
+def test_attachment_response_rows_include_meeting_minutes_metadata(db_session: Session):
+    conference = Conference(name="North Zimbabwe Conference", union_name="ZUC")
+    university = University(name="Campus A", conference=conference)
+    user = User(email="coordinator@example.com", name="Coordinator", password_hash="hashed")
+    update = ProgramUpdate(
+        university=university,
+        title="Committee Update",
+        event_name="Committee Meeting",
+        reporting_period="2026-Q1",
+        summary="Monthly committee meeting completed.",
+        attachments_json=json.dumps(
+            [
+                {
+                    "name": "minutes-march.pdf",
+                    "stored_name": "minutes-march.pdf",
+                    "content_type": "application/pdf",
+                    "size_bytes": 2048,
+                    "category": "minutes",
+                    "meeting_date": "2026-03-10",
+                    "venue": "Senate Room",
+                    "notes": "Approved committee minutes",
+                }
+            ]
+        ),
+        submitted_by=1,
+    )
+    db_session.add_all([conference, university, user, update])
+    db_session.commit()
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/program-updates",
+            "headers": [],
+            "scheme": "http",
+            "server": ("testserver", 80),
+            "client": ("testclient", 50000),
+            "root_path": "",
+            "query_string": b"",
+        }
+    )
+
+    attachments = _attachment_response_rows(update, request)
+
+    assert attachments[0]["category"] == "minutes"
+    assert attachments[0]["meeting_date"] == "2026-03-10"
+    assert attachments[0]["venue"] == "Senate Room"
+    assert attachments[0]["notes"] == "Approved committee minutes"
+
+
+def test_meeting_updates_require_uploaded_minutes():
+    with pytest.raises(HTTPException) as exc_info:
+        _ensure_meeting_update_has_minutes("Meeting")
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Meeting updates require uploaded meeting minutes"
+
+
+def test_meeting_updates_accept_existing_minutes_attachments():
+    _ensure_meeting_update_has_minutes(
+        "Meeting",
+        kept_attachments=[
+            {
+                "name": "minutes.pdf",
+                "stored_name": "minutes.pdf",
+                "category": "minutes",
+            }
+        ],
+    )

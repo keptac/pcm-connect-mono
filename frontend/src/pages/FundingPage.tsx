@@ -90,7 +90,7 @@ function matchesAudienceFilter(audience: string, filter: string) {
 export default function FundingPage() {
   const client = useQueryClient();
   const { roles, canSelectUniversity, scopedUniversityId, defaultUniversityId, isUniversityScoped } = useUniversityScope();
-  const canView = roles.some((role) => ["super_admin", "student_admin", "alumni_admin", "finance_officer", "students_finance", "executive", "director"].includes(role));
+  const canView = roles.some((role) => ["super_admin", "student_admin", "secretary", "alumni_admin", "finance_officer", "students_finance", "executive", "director"].includes(role));
   const canManageRecords = roles.some((role) => ["super_admin", "finance_officer", "students_finance", "executive"].includes(role));
   const canUseHq = roles.some((role) => ["super_admin", "executive"].includes(role)) && !isUniversityScoped;
   const canSelectFundingScope = canSelectUniversity || (roles.includes("executive") && !isUniversityScoped);

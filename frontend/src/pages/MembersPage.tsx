@@ -43,10 +43,10 @@ function buildInitialForm(defaultUniversityId?: number | null, defaultStatus = "
 export default function MembersPage() {
   const client = useQueryClient();
   const { roles, canSelectUniversity, scopedUniversityId, defaultUniversityId, isUniversityScoped } = useUniversityScope();
-  const canView = roles.some((role) => [...fullPeopleAccessRoles, "alumni_admin", "student_admin"].includes(role));
+  const canView = roles.some((role) => [...fullPeopleAccessRoles, "alumni_admin", "student_admin", "secretary"].includes(role));
   const hasFullPeopleAccess = roles.some((role) => fullPeopleAccessRoles.includes(role));
   const hasAlumniAdmin = !hasFullPeopleAccess && roles.includes("alumni_admin");
-  const hasStudentAdmin = !hasFullPeopleAccess && roles.includes("student_admin");
+  const hasStudentAdmin = !hasFullPeopleAccess && roles.some((role) => ["student_admin", "secretary"].includes(role));
   const visibleMemberTypes = hasFullPeopleAccess
     ? memberTypes
     : Array.from(new Set([

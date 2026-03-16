@@ -110,7 +110,7 @@ function isProgramDeleteLocked(program: any, updateCount: number) {
 export default function ProgramsPage() {
   const client = useQueryClient();
   const { user, roles, canSelectUniversity, scopedUniversityId, defaultUniversityId } = useUniversityScope();
-  const canManage = roles.some((role) => ["super_admin", "student_admin", "program_manager", "committee_member", "executive", "director", "alumni_admin"].includes(role));
+  const canManage = roles.some((role) => ["super_admin", "student_admin", "secretary", "program_manager", "committee_member", "executive", "director", "alumni_admin"].includes(role));
   const isAlumniAdmin = roles.includes("alumni_admin");
   const defaultProgramAudience = isAlumniAdmin ? "Alumni" : "Students";
   const hasGlobalAccess = Boolean(user) && !user.university_id;

@@ -5,6 +5,7 @@ type AlumniConnectUser = {
 const alumniConnectBlockedRoles = new Set([
   "super_admin",
   "student_admin",
+  "secretary",
   "program_manager",
   "finance_officer",
   "students_finance",

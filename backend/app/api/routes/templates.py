@@ -13,7 +13,7 @@ router = APIRouter(prefix="/templates", tags=["templates"])
 
 
 @router.get("", response_model=list[ReportTemplateRead])
-def list_templates(db: Session = Depends(get_db), user=Depends(require_role(["super_admin", "student_admin"]))):
+def list_templates(db: Session = Depends(get_db), user=Depends(require_role(["super_admin", "student_admin", "secretary"]))):
     templates = db.query(ReportTemplate).all()
     results = []
     for tpl in templates:
@@ -51,7 +51,7 @@ def create_template(payload: ReportTemplateCreate, db: Session = Depends(get_db)
 
 
 @router.get("/{template_id}/download")
-def download_template(template_id: int, db: Session = Depends(get_db), user=Depends(require_role(["super_admin", "student_admin"]))):
+def download_template(template_id: int, db: Session = Depends(get_db), user=Depends(require_role(["super_admin", "student_admin", "secretary"]))):
     tpl = db.query(ReportTemplate).filter(ReportTemplate.id == template_id).first()
     if not tpl:
         raise HTTPException(status_code=404, detail="Template not found")

@@ -1,6 +1,6 @@
 import json
 from io import BytesIO
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -50,6 +50,10 @@ def _attachment_response_rows(update: ProgramUpdate, request: Request) -> list[d
                 "url": url,
                 "content_type": item.get("content_type"),
                 "size_bytes": item.get("size_bytes"),
+                "category": item.get("category"),
+                "meeting_date": item.get("meeting_date"),
+                "venue": item.get("venue"),
+                "notes": item.get("notes"),
             }
         )
     return rows
@@ -65,7 +69,7 @@ def _delete_attachment_files(attachments: list[dict]) -> None:
             target.unlink()
 
 
-async def _save_attachments(files: list[UploadFile]) -> list[dict]:
+async def _save_attachments(files: list[UploadFile], metadata: dict | None = None) -> list[dict]:
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
     allowed_extensions = {
         ext.strip().lower()
@@ -91,14 +95,15 @@ async def _save_attachments(files: list[UploadFile]) -> list[dict]:
         destination = Path(settings.upload_dir) / stored_name
         destination.write_bytes(content)
 
-        saved.append(
-            {
-                "name": file.filename,
-                "stored_name": stored_name,
-                "content_type": file.content_type,
-                "size_bytes": size_bytes,
-            }
-        )
+        row = {
+            "name": file.filename,
+            "stored_name": stored_name,
+            "content_type": file.content_type,
+            "size_bytes": size_bytes,
+        }
+        if metadata:
+            row.update({key: value for key, value in metadata.items() if value is not None})
+        saved.append(row)
     return saved
 
 
@@ -114,16 +119,91 @@ def _to_optional_float(value):
     return float(value)
 
 
+def _to_optional_text(value):
+    if value in (None, ""):
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _is_meeting_event_name(event_name: str | None) -> bool:
+    return (event_name or "").strip().lower() == "meeting"
+
+
+def _parse_meeting_minutes_metadata(form) -> dict | None:
+    meeting_date_value = _to_optional_text(form.get("meeting_minutes_date"))
+    venue = _to_optional_text(form.get("meeting_minutes_venue"))
+    notes = _to_optional_text(form.get("meeting_minutes_notes"))
+
+    if not any([meeting_date_value, venue, notes]):
+        return None
+    if not meeting_date_value:
+        raise HTTPException(status_code=400, detail="Meeting date is required for meeting minutes")
+    if not venue:
+        raise HTTPException(status_code=400, detail="Venue is required for meeting minutes")
+
+    try:
+        normalized_meeting_date = date.fromisoformat(meeting_date_value).isoformat()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Meeting date must be a valid date") from exc
+
+    return {
+        "category": "minutes",
+        "meeting_date": normalized_meeting_date,
+        "venue": venue,
+        "notes": notes,
+    }
+
+
+def _apply_meeting_minutes_metadata(attachments: list[dict], metadata: dict | None) -> list[dict]:
+    if not metadata:
+        return attachments
+
+    updated_rows = []
+    for item in attachments:
+        if item.get("category") == "minutes":
+            updated_rows.append(
+                {
+                    **item,
+                    "category": metadata["category"],
+                    "meeting_date": metadata["meeting_date"],
+                    "venue": metadata["venue"],
+                    "notes": metadata.get("notes"),
+                }
+            )
+        else:
+            updated_rows.append(item)
+    return updated_rows
+
+
+def _ensure_meeting_update_has_minutes(
+    event_name: str | None,
+    kept_attachments: list[dict] | None = None,
+    meeting_minutes_attachments: list[UploadFile] | None = None,
+) -> None:
+    if not _is_meeting_event_name(event_name):
+        return
+
+    has_existing_minutes = any(item.get("category") == "minutes" for item in kept_attachments or [])
+    has_new_minutes = bool(meeting_minutes_attachments)
+    if not has_existing_minutes and not has_new_minutes:
+        raise HTTPException(status_code=400, detail="Meeting updates require uploaded meeting minutes")
+
+
 async def _parse_payload_from_request(request: Request, patch: bool = False):
     content_type = request.headers.get("content-type", "")
     if "multipart/form-data" not in content_type:
         data = await request.json()
         model = ProgramImpactUpdatePatch if patch else ProgramImpactUpdateCreate
-        return model(**data), [], None
+        return model(**data), [], [], None, None
 
     form = await request.form()
     attachments = [item for item in form.getlist("attachments") if getattr(item, "filename", None)]
+    meeting_minutes_attachments = [item for item in form.getlist("meeting_minutes_attachments") if getattr(item, "filename", None)]
     existing_attachments = None
+    meeting_minutes_metadata = _parse_meeting_minutes_metadata(form)
+    if meeting_minutes_attachments and not meeting_minutes_metadata:
+        raise HTTPException(status_code=400, detail="Meeting minutes require both the meeting date and venue")
     if patch and form.get("existing_attachments_json"):
         try:
             existing_attachments = json.loads(str(form.get("existing_attachments_json")))
@@ -157,7 +237,7 @@ async def _parse_payload_from_request(request: Request, patch: bool = False):
                     data[field] = _to_optional_float(value)
                 else:
                     data[field] = value
-            return ProgramImpactUpdatePatch(**data), attachments, existing_attachments
+            return ProgramImpactUpdatePatch(**data), attachments, meeting_minutes_attachments, existing_attachments, meeting_minutes_metadata
 
         data = {
             "university_id": int(form.get("university_id")),
@@ -174,7 +254,7 @@ async def _parse_payload_from_request(request: Request, patch: bool = False):
             "volunteers_involved": _to_optional_int(form.get("volunteers_involved")) or 0,
             "funds_used": _to_optional_float(form.get("funds_used")),
         }
-        return ProgramImpactUpdateCreate(**data), attachments, None
+        return ProgramImpactUpdateCreate(**data), attachments, meeting_minutes_attachments, None, meeting_minutes_metadata
     except (TypeError, ValueError, ValidationError) as exc:
         raise HTTPException(status_code=400, detail="Invalid update submission") from exc
 
@@ -522,7 +602,7 @@ async def create_update(
     db: Session = Depends(get_db),
     user=Depends(require_role(PROGRAM_ROLES)),
 ):
-    payload, attachments, _ = await _parse_payload_from_request(request, patch=False)
+    payload, attachments, meeting_minutes_attachments, _, meeting_minutes_metadata = await _parse_payload_from_request(request, patch=False)
     scoped_university_id = resolve_university_scope(user, payload.university_id)
     program = None
     if payload.program_id is not None:
@@ -533,6 +613,13 @@ async def create_update(
     event_name, event_detail, title = _normalize_event_fields(db, payload.event_name, payload.event_detail, payload.title)
     payload_data = payload.model_dump(exclude={"university_id", "event_name", "event_detail", "title"})
     payload_data["reporting_period"] = _normalize_reporting_period(db, payload.reporting_period)
+    _ensure_meeting_update_has_minutes(event_name, meeting_minutes_attachments=meeting_minutes_attachments)
+
+    saved_attachments = []
+    if attachments:
+        saved_attachments.extend(await _save_attachments(attachments))
+    if meeting_minutes_attachments:
+        saved_attachments.extend(await _save_attachments(meeting_minutes_attachments, metadata=meeting_minutes_metadata))
 
     update = ProgramUpdate(
         **payload_data,
@@ -540,7 +627,7 @@ async def create_update(
         title=title,
         event_name=event_name,
         event_detail=event_detail,
-        attachments_json=json.dumps(await _save_attachments(attachments)) if attachments else None,
+        attachments_json=json.dumps(saved_attachments) if saved_attachments else None,
         submitted_by=user.id,
     )
     db.add(update)
@@ -559,7 +646,7 @@ async def update_program_update(
     db: Session = Depends(get_db),
     user=Depends(require_role(PROGRAM_ROLES)),
 ):
-    payload, attachments, existing_attachments = await _parse_payload_from_request(request, patch=True)
+    payload, attachments, meeting_minutes_attachments, existing_attachments, meeting_minutes_metadata = await _parse_payload_from_request(request, patch=True)
     update = db.query(ProgramUpdate).filter(ProgramUpdate.id == update_id).first()
     if not update:
         raise HTTPException(status_code=404, detail="Program update not found")
@@ -596,6 +683,7 @@ async def update_program_update(
     current_attachments = _load_attachments(update)
     if existing_attachments is None:
         kept_attachments = current_attachments
+        removed_attachments = []
     else:
         requested_stored_names = {
             item.get("stored_name") or item.get("path")
@@ -608,10 +696,15 @@ async def update_program_update(
         removed_attachments = [
             item for item in current_attachments if (item.get("stored_name") or item.get("path")) not in requested_stored_names
         ]
-        _delete_attachment_files(removed_attachments)
+
+    kept_attachments = _apply_meeting_minutes_metadata(kept_attachments, meeting_minutes_metadata)
+    _ensure_meeting_update_has_minutes(event_name, kept_attachments=kept_attachments, meeting_minutes_attachments=meeting_minutes_attachments)
+    _delete_attachment_files(removed_attachments)
 
     if attachments:
         kept_attachments.extend(await _save_attachments(attachments))
+    if meeting_minutes_attachments:
+        kept_attachments.extend(await _save_attachments(meeting_minutes_attachments, metadata=meeting_minutes_metadata))
     updates["attachments_json"] = json.dumps(kept_attachments) if kept_attachments else None
 
     for key, value in updates.items():

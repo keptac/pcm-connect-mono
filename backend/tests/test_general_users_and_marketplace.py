@@ -19,7 +19,7 @@ from app.api.routes.marketplace import (
     update_marketplace_listing,
     withdraw_marketplace_interest,
 )
-from app.api.routes.members import get_my_profile, list_alumni_connect, update_my_profile
+from app.api.routes.members import _member_access_scope, get_my_profile, list_alumni_connect, update_my_profile
 from app.core.security import verify_password
 from app.db.base import Base
 from app.models import MarketplaceListing, Member, Role, University, User, UserRole
@@ -328,6 +328,24 @@ def test_alumni_connect_denies_admin_and_global_scope_roles(db_session: Session)
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "Alumni Connect is only available to student and alumni accounts"
+
+
+def test_secretary_gets_student_member_scope(db_session: Session):
+    university = University(name="Example University")
+    user = User(
+        email="secretary@example.com",
+        name="Campus Secretary",
+        password_hash="hashed",
+        university=university,
+    )
+    db_session.add_all([university, user])
+    db_session.commit()
+    add_role(db_session, user, "secretary")
+
+    visible_statuses, writable_statuses = _member_access_scope(db_session, user)
+
+    assert visible_statuses == {"Student"}
+    assert writable_statuses == {"Student"}
 
 
 def test_global_role_can_post_marketplace_listing_for_a_university(db_session: Session):

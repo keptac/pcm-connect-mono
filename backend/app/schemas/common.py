@@ -270,6 +270,10 @@ class UpdateAttachmentRead(SchemaModel):
     url: str
     content_type: Optional[str] = None
     size_bytes: Optional[int] = None
+    category: Optional[str] = None
+    meeting_date: Optional[date] = None
+    venue: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class ProgramImpactUpdateBase(SchemaModel):

@@ -43,6 +43,7 @@ def test_seed_data_bootstraps_reference_catalog_and_marketplace_fixture_accounts
         assert db.query(AcademicProgram).count() > 0
         assert db.query(ReportingPeriod).count() == len(REPORTING_PERIOD_SPECS)
         assert db.query(MandatoryProgram).count() > 0
+        assert db.query(MandatoryProgram).filter(MandatoryProgram.name == "Meeting").first() is not None
 
         assert db.query(Member).count() == 0
         assert db.query(Program).count() == 0

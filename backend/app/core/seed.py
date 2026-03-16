@@ -24,7 +24,7 @@ from .config import settings
 from .security import hash_password
 from .zimbabwe_academic_catalog import ZIMBABWE_ACADEMIC_INSTITUTION_SPECS, build_academic_program_specs, normalize_academic_program_name
 
-DEFAULT_ROLES = ["super_admin", "student_admin", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin", "general_user", "service_recovery"]
+DEFAULT_ROLES = ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin", "general_user", "service_recovery"]
 ACADEMIC_SPEC_BY_NAME = {spec["name"]: spec for spec in ZIMBABWE_ACADEMIC_INSTITUTION_SPECS}
 DEFAULT_UNION_NAME = "Zimbabwe East Union Conference"
 DEFAULT_CONFERENCE_SPECS = [
@@ -391,6 +391,7 @@ MANDATORY_EVENT_SPECS = [
     {"name": "Freshman camp", "sort_order": 50},
     {"name": "Book distribution", "sort_order": 60},
     {"name": "Medical missionary", "sort_order": 70},
+    {"name": "Meeting", "sort_order": 80},
     {"name": "Other", "sort_order": 999, "allow_other_detail": True},
 ]
 

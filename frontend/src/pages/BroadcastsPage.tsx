@@ -47,7 +47,7 @@ function badgeTone(value?: string | null): "success" | "warning" | "danger" | "i
 export default function BroadcastsPage() {
   const client = useQueryClient();
   const { user, roles, canSelectUniversity, scopedUniversityId, defaultUniversityId } = useUniversityScope();
-  const canView = roles.some((role) => ["super_admin", "student_admin", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director"].includes(role));
+  const canView = roles.some((role) => ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director"].includes(role));
   const canManage = canView;
 
   const [selectedId, setSelectedId] = useState<number | null>(null);

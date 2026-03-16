@@ -5,7 +5,7 @@ import { useAuthStore } from "../store/auth";
 
 export default function AnalyticsPage() {
   const { user } = useAuthStore();
-  if (!user?.roles?.some((r) => ["super_admin", "student_admin"].includes(r))) {
+  if (!user?.roles?.some((r) => ["super_admin", "student_admin", "secretary"].includes(r))) {
     return <div className="card p-6">Access denied.</div>;
   }
 

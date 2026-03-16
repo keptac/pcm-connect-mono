@@ -21,6 +21,7 @@ FULL_MEMBER_ACCESS_ROLES = {"super_admin", "program_manager", "finance_officer",
 ALUMNI_CONNECT_BLOCKED_ROLES = {
     "super_admin",
     "student_admin",
+    "secretary",
     "program_manager",
     "finance_officer",
     "students_finance",
@@ -44,7 +45,7 @@ def _member_access_scope(db: Session, user) -> tuple[set[str] | None, set[str] |
     if "alumni_admin" in user_roles:
         visible_statuses.update({"Alumni", "Student", "Staff"})
         writable_statuses.add("Alumni")
-    if "student_admin" in user_roles:
+    if "student_admin" in user_roles or "secretary" in user_roles:
         visible_statuses.add("Student")
         writable_statuses.add("Student")
 

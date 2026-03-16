@@ -41,7 +41,7 @@ export default function MessagesPage() {
   const client = useQueryClient();
   const { user } = useAuthStore();
   const roles = user?.roles || [];
-  const canView = roles.some((role) => ["super_admin", "student_admin", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin", "general_user"].includes(role));
+  const canView = roles.some((role) => ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin", "general_user"].includes(role));
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [selectedThreadId, setSelectedThreadId] = useState<number | null>(null);

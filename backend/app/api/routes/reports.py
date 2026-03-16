@@ -35,7 +35,7 @@ def submit_form_report(
     report_type: str | None = Form("semester_form"),
     images: list[UploadFile] = File(default_factory=list),
     db: Session = Depends(get_db),
-    user=Depends(require_role(["super_admin", "student_admin"])),
+    user=Depends(require_role(["super_admin", "student_admin", "secretary"])),
 ):
     # Parse program entries from JSON
     try:
@@ -102,7 +102,7 @@ def submit_form_report(
 def list_reports(
     university_id: int | None = None,
     db: Session = Depends(get_db),
-    user=Depends(require_role(["super_admin", "student_admin"])),
+    user=Depends(require_role(["super_admin", "student_admin", "secretary"])),
 ):
     scoped_university_id = resolve_university_scope(user, university_id)
     query = db.query(UploadedReport).order_by(UploadedReport.uploaded_at.desc(), UploadedReport.id.desc())
@@ -112,7 +112,7 @@ def list_reports(
 
 
 @router.get("/{report_id}/rows", response_model=list[ParsedRowRead])
-def report_rows(report_id: int, db: Session = Depends(get_db), user=Depends(require_role(["super_admin", "student_admin"]))):
+def report_rows(report_id: int, db: Session = Depends(get_db), user=Depends(require_role(["super_admin", "student_admin", "secretary"]))):
     report = db.query(UploadedReport).filter(UploadedReport.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")

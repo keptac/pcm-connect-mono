@@ -10,7 +10,7 @@ import { bootstrapChatKeys, clearSessionWrappingKey, rotateChatWrappingPassword 
 import { useUniversityScope } from "../lib/universityScope";
 import { useAuthStore } from "../store/auth";
 
-const networkRoles = ["super_admin", "student_admin", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin", "general_user"];
+const networkRoles = ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin", "general_user"];
 const missionRoles = ["general_user"];
 const helpMenuItems = [
   { label: "Help", to: "/help" },
@@ -42,13 +42,13 @@ const navItems = [
     label: "Overview",
     to: "/",
     description: "Network pulse",
-    roles: ["super_admin", "student_admin", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin"]
+    roles: ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin"]
   },
   {
     label: "People",
     to: "/people",
     description: "Students, staff, alumni",
-    roles: ["super_admin", "student_admin", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin"]
+    roles: ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin"]
   },
   {
     label: "Alumni connect",
@@ -72,19 +72,19 @@ const navItems = [
     label: "Ministry programs",
     to: "/programs",
     description: "Ministry portfolio",
-    roles: ["super_admin", "student_admin", "program_manager", "committee_member", "executive", "director", "alumni_admin"]
+    roles: ["super_admin", "student_admin", "secretary", "program_manager", "committee_member", "executive", "director", "alumni_admin"]
   },
   {
     label: "Calendar",
     to: "/calendar",
     description: "Events and dates",
-    roles: ["super_admin", "student_admin", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin"]
+    roles: ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin"]
   },
   {
     label: "Broadcasts",
     to: "/broadcasts",
     description: "Shared invitations",
-    roles: ["super_admin", "student_admin", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director"]
+    roles: ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director"]
   },
   {
     label: "Messages",
@@ -102,13 +102,13 @@ const navItems = [
     label: "Mission Reports",
     to: "/updates",
     description: "Impact reporting",
-    roles: ["super_admin", "student_admin", "program_manager", "committee_member", "executive", "director", "alumni_admin"]
+    roles: ["super_admin", "student_admin", "secretary", "program_manager", "committee_member", "executive", "director", "alumni_admin"]
   },
   {
     label: "Funding",
     to: "/funding",
     description: "Income and expenses",
-    roles: ["super_admin", "student_admin", "alumni_admin", "finance_officer", "students_finance", "executive", "director"]
+    roles: ["super_admin", "student_admin", "secretary", "alumni_admin", "finance_officer", "students_finance", "executive", "director"]
   },
   {
     label: "Universities",
@@ -120,7 +120,7 @@ const navItems = [
     label: "Team",
     to: "/team",
     description: "User accounts",
-    roles: ["super_admin", "student_admin", "alumni_admin", "service_recovery"]
+    roles: ["super_admin", "student_admin", "secretary", "alumni_admin", "service_recovery"]
   },
   {
     label: "Admin",

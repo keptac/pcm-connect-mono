@@ -42,7 +42,7 @@ function buildInitialForm(defaultUniversityId?: number | null) {
 export default function ReportsPage() {
   const client = useQueryClient();
   const { roles, canSelectUniversity, scopedUniversityId, defaultUniversityId } = useUniversityScope();
-  const canManage = roles.some((role) => ["super_admin", "student_admin"].includes(role));
+  const canManage = roles.some((role) => ["super_admin", "student_admin", "secretary"].includes(role));
 
   const [form, setForm] = useState(() => buildInitialForm(defaultUniversityId));
   const [selectedId, setSelectedId] = useState<number | null>(null);

@@ -185,6 +185,37 @@ def test_service_recovery_cannot_provision_team_accounts(db_session: Session):
     assert exc_info.value.detail == "Insufficient role"
 
 
+def test_secretary_can_provision_scoped_secretary_account(db_session: Session):
+    university = University(name="Example University")
+    provisioner = User(
+        email="secretary@example.com",
+        name="Campus Secretary",
+        password_hash="hashed",
+        university=university,
+    )
+    db_session.add_all([university, provisioner])
+    db_session.commit()
+    add_role(db_session, provisioner, "secretary")
+
+    created = create_user(
+        UserCreate(
+            email="assistant-secretary@example.com",
+            name="Assistant Secretary",
+            password="secret123",
+            roles=["secretary"],
+            university_id=university.id,
+        ),
+        db=db_session,
+        user=provisioner,
+    )
+
+    stored_user = db_session.query(User).filter(User.email == "assistant-secretary@example.com").first()
+    assert stored_user is not None
+    assert created.roles == ["secretary"]
+    assert created.university_id == university.id
+    assert stored_user.university_id == university.id
+
+
 def test_service_recovery_can_reset_password_and_force_change(db_session: Session):
     recovery_user = User(
         email="adam@pcm.service",

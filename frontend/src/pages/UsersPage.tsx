@@ -12,6 +12,7 @@ const DEFAULT_TENURE_MONTHS = 24;
 const roleOptions = [
   "super_admin",
   "student_admin",
+  "secretary",
   "program_manager",
   "finance_officer",
   "students_finance",
@@ -81,8 +82,8 @@ export default function UsersPage() {
   const client = useQueryClient();
   const currentUser = useAuthStore((state) => state.user);
   const { roles, isSuperAdmin, canSelectUniversity, defaultUniversityId } = useUniversityScope();
-  const canManageTeam = roles.some((role) => ["super_admin", "student_admin", "alumni_admin", "service_recovery"].includes(role));
-  const canProvisionTeam = roles.some((role) => ["super_admin", "student_admin", "alumni_admin"].includes(role));
+  const canManageTeam = roles.some((role) => ["super_admin", "student_admin", "secretary", "alumni_admin", "service_recovery"].includes(role));
+  const canProvisionTeam = roles.some((role) => ["super_admin", "student_admin", "secretary", "alumni_admin"].includes(role));
   const canRecoverPasswords = roles.some((role) => ["super_admin", "service_recovery"].includes(role));
 
   const { data: users } = useQuery({
