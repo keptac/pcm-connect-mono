@@ -16,6 +16,7 @@ from ..models import (
     ProgramUpdate,
     ReportingPeriod,
     Role,
+    Union,
     University,
     User,
     UserRole,
@@ -27,11 +28,16 @@ from .zimbabwe_academic_catalog import ZIMBABWE_ACADEMIC_INSTITUTION_SPECS, buil
 DEFAULT_ROLES = ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin", "general_user", "service_recovery"]
 ACADEMIC_SPEC_BY_NAME = {spec["name"]: spec for spec in ZIMBABWE_ACADEMIC_INSTITUTION_SPECS}
 DEFAULT_UNION_NAME = "Zimbabwe East Union Conference"
+DEFAULT_UNION_SPECS = [
+    {"name": "Zimbabwe Central Union Conference"},
+    {"name": "Zimbabwe East Union Conference"},
+    {"name": "Zimbabwe West Union Conference"},
+]
 DEFAULT_CONFERENCE_SPECS = [
-    {"name": "North Zimbabwe Conference", "union_name": DEFAULT_UNION_NAME},
-    {"name": "East Zimbabwe Conference", "union_name": DEFAULT_UNION_NAME},
-    {"name": "South Zimbabwe Conference", "union_name": DEFAULT_UNION_NAME},
-    {"name": "Central Zimbabwe Conference", "union_name": DEFAULT_UNION_NAME},
+    {"name": "North Zimbabwe Conference", "union_name": "Zimbabwe Central Union Conference"},
+    {"name": "East Zimbabwe Conference", "union_name": "Zimbabwe East Union Conference"},
+    {"name": "South Zimbabwe Conference", "union_name": "Zimbabwe West Union Conference"},
+    {"name": "Central Zimbabwe Conference", "union_name": "Zimbabwe Central Union Conference"},
 ]
 REPORTING_PERIOD_SPECS = [
     {
@@ -458,11 +464,13 @@ def _chapter_code(name: str) -> str:
 
 
 def _ensure_conference(db: Session, spec: dict) -> Conference:
+    union = _ensure_union(db, spec["union_name"])
     conference = db.query(Conference).filter(Conference.name == spec["name"]).first()
     if not conference:
         conference = Conference(
             name=spec["name"],
             union_name=spec["union_name"],
+            union_id=union.id,
             is_active=True,
         )
         db.add(conference)
@@ -470,7 +478,8 @@ def _ensure_conference(db: Session, spec: dict) -> Conference:
         db.refresh(conference)
         return conference
 
-    conference.union_name = conference.union_name or spec["union_name"]
+    conference.union_name = spec["union_name"]
+    conference.union_id = union.id
     if conference.is_active is None:
         conference.is_active = True
     db.commit()
@@ -480,6 +489,26 @@ def _ensure_conference(db: Session, spec: dict) -> Conference:
 
 def _ensure_default_conferences(db: Session) -> dict[str, Conference]:
     return {spec["name"]: _ensure_conference(db, spec) for spec in DEFAULT_CONFERENCE_SPECS}
+
+
+def _ensure_union(db: Session, union_name: str) -> Union:
+    union = db.query(Union).filter(Union.name == union_name).first()
+    if not union:
+        union = Union(name=union_name, is_active=True)
+        db.add(union)
+        db.commit()
+        db.refresh(union)
+        return union
+
+    if union.is_active is None:
+        union.is_active = True
+        db.commit()
+        db.refresh(union)
+    return union
+
+
+def _ensure_default_unions(db: Session) -> dict[str, Union]:
+    return {spec["name"]: _ensure_union(db, spec["name"]) for spec in DEFAULT_UNION_SPECS}
 
 
 def _infer_conference_name(spec: dict | None, university: University | None = None) -> str:
@@ -1473,6 +1502,7 @@ def seed_data(db: Session):
     for role_name in DEFAULT_ROLES:
         _ensure_role(db, role_name)
 
+    _ensure_default_unions(db)
     _ensure_default_conferences(db)
 
     admin = db.query(User).filter(User.email == settings.admin_email).first()

@@ -13,6 +13,8 @@ class User(Base):
     name = Column(String, nullable=True)
     password_hash = Column(String, nullable=False)
     university_id = Column(Integer, ForeignKey("universities.id"), nullable=True)
+    conference_id = Column(Integer, ForeignKey("conferences.id"), nullable=True)
+    union_id = Column(Integer, ForeignKey("unions.id"), nullable=True)
     member_id = Column(UUID(as_uuid=True), ForeignKey("members.id"), nullable=True, unique=True)
     is_active = Column(Boolean, default=True)
     is_system_admin = Column(Boolean, default=False, nullable=False)
@@ -31,6 +33,8 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     university = relationship("University", back_populates="users")
+    conference = relationship("Conference", back_populates="users")
+    union = relationship("Union", back_populates="users")
     member = relationship("Member", back_populates="user")
     roles = relationship("UserRole", back_populates="user", cascade="all, delete-orphan")
     marketplace_interests = relationship("MarketplaceInterest", back_populates="user", cascade="all, delete-orphan")

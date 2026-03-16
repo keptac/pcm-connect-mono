@@ -7,7 +7,7 @@ from ...db.session import get_db
 from ...models import CampusEvent, Program
 from ...schemas import CampusEventCreate, CampusEventRead, CampusEventUpdate
 from ...services.audit_log import log_action
-from ..deps import CHAPTER_ROLES, require_role, resolve_university_scope
+from ..deps import CHAPTER_ROLES, apply_university_scope_filter, require_role, resolve_university_scope, resolve_visible_university_ids
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -50,16 +50,23 @@ def _validate_program_scope(db: Session, program_id: int | None, university_id: 
 @router.get("", response_model=list[CampusEventRead])
 def list_events(
     university_id: int | None = None,
+    conference_id: int | None = None,
+    union_id: int | None = None,
     program_id: int | None = None,
     start_from: datetime | None = None,
     end_to: datetime | None = None,
     db: Session = Depends(get_db),
     user=Depends(require_role(CHAPTER_ROLES)),
 ):
-    scoped_university_id = resolve_university_scope(user, university_id)
+    scoped_university_ids = resolve_visible_university_ids(
+        db,
+        user,
+        requested_university_id=university_id,
+        requested_conference_id=conference_id,
+        requested_union_id=union_id,
+    )
     query = db.query(CampusEvent).order_by(CampusEvent.starts_at.asc(), CampusEvent.id.asc())
-    if scoped_university_id:
-        query = query.filter(CampusEvent.university_id == scoped_university_id)
+    query = apply_university_scope_filter(query, CampusEvent, scoped_university_ids)
     if program_id:
         query = query.filter(CampusEvent.program_id == program_id)
     if start_from:
@@ -75,7 +82,7 @@ def create_event(
     db: Session = Depends(get_db),
     user=Depends(require_role(CHAPTER_ROLES)),
 ):
-    scoped_university_id = resolve_university_scope(user, payload.university_id)
+    scoped_university_id = resolve_university_scope(db, user, payload.university_id)
     _validate_event_window(payload.starts_at, payload.ends_at)
     _validate_program_scope(db, payload.program_id, scoped_university_id)
 
@@ -103,7 +110,7 @@ def update_event(
         raise HTTPException(status_code=404, detail="Event not found")
 
     target_university_id = payload.university_id or event.university_id
-    scoped_university_id = resolve_university_scope(user, target_university_id)
+    scoped_university_id = resolve_university_scope(db, user, target_university_id)
     target_program_id = payload.program_id if payload.program_id is not None else event.program_id
     starts_at = payload.starts_at or event.starts_at
     ends_at = payload.ends_at or event.ends_at
@@ -128,7 +135,7 @@ def delete_event(
     event = db.query(CampusEvent).filter(CampusEvent.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
-    resolve_university_scope(user, event.university_id)
+    resolve_university_scope(db, user, event.university_id)
 
     db.delete(event)
     db.commit()

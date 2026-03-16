@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Papa from "papaparse";
 
 import { academicProgramsApi, analyticsApi, membersApi, universitiesApi } from "../api/endpoints";
+import { UniversitySelectOptions } from "../components/UniversitySelectOptions";
 import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatDate, formatNumber } from "../lib/format";
@@ -42,7 +43,7 @@ function buildInitialForm(defaultUniversityId?: number | null, defaultStatus = "
 
 export default function MembersPage() {
   const client = useQueryClient();
-  const { roles, canSelectUniversity, scopedUniversityId, defaultUniversityId, isUniversityScoped } = useUniversityScope();
+  const { roles, canSelectUniversity, defaultUniversityId, isUniversityScoped, scopeKey, scopeParams } = useUniversityScope();
   const canView = roles.some((role) => [...fullPeopleAccessRoles, "alumni_admin", "student_admin", "secretary"].includes(role));
   const hasFullPeopleAccess = roles.some((role) => fullPeopleAccessRoles.includes(role));
   const hasAlumniAdmin = !hasFullPeopleAccess && roles.includes("alumni_admin");
@@ -62,23 +63,23 @@ export default function MembersPage() {
   const defaultMemberType = writableMemberTypes[0] || "Student";
 
   const { data: members } = useQuery({
-    queryKey: ["members", scopedUniversityId],
-    queryFn: () => membersApi.list(scopedUniversityId),
+    queryKey: ["members", scopeKey],
+    queryFn: () => membersApi.list(scopeParams),
     enabled: canView
   });
   const { data: academicPrograms } = useQuery({
-    queryKey: ["academic-programs", scopedUniversityId],
-    queryFn: () => academicProgramsApi.list(scopedUniversityId),
+    queryKey: ["academic-programs", scopeKey],
+    queryFn: () => academicProgramsApi.list(scopeParams),
     enabled: canView
   });
   const { data: universities } = useQuery({
-    queryKey: ["universities"],
-    queryFn: universitiesApi.list,
+    queryKey: ["universities", scopeKey],
+    queryFn: () => universitiesApi.list(scopeParams),
     enabled: canView
   });
   const { data: breakdown } = useQuery({
-    queryKey: ["people-breakdown", scopedUniversityId],
-    queryFn: () => analyticsApi.people("status", scopedUniversityId),
+    queryKey: ["people-breakdown", scopeKey],
+    queryFn: () => analyticsApi.people("status", scopeParams),
     enabled: canView
   });
 
@@ -323,10 +324,7 @@ export default function MembersPage() {
                   <label className="field-shell">
                     <span className="field-label">University / campus</span>
                     <select className="field-input" value={form.university_id} onChange={(event) => setForm({ ...form, university_id: event.target.value, program_of_study_id: "" })}>
-                      <option value="">Select university or campus</option>
-                      {universities?.map((university: any) => (
-                        <option key={university.id} value={university.id}>{university.name}</option>
-                      ))}
+                      <UniversitySelectOptions universities={universities} emptyOptionLabel="Select university or campus" />
                     </select>
                   </label>
                 ) : (

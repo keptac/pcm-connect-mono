@@ -28,7 +28,7 @@ function employmentTone(status?: string | null): "success" | "warning" | "info" 
 export default function AlumniConnectPage() {
   const navigate = useNavigate();
   const client = useQueryClient();
-  const { user, roles, scopedUniversityId } = useUniversityScope();
+  const { user, roles, scopeKey, scopeParams } = useUniversityScope();
   const canView = canAccessAlumniConnect(user, roles);
 
   const [search, setSearch] = useState("");
@@ -36,8 +36,8 @@ export default function AlumniConnectPage() {
   const [actionError, setActionError] = useState("");
 
   const { data: members } = useQuery({
-    queryKey: ["alumni-connect", scopedUniversityId],
-    queryFn: () => membersApi.alumniConnect(scopedUniversityId),
+    queryKey: ["alumni-connect", scopeKey],
+    queryFn: () => membersApi.alumniConnect(scopeParams),
     enabled: canView
   });
   const { data: contacts } = useQuery({
@@ -47,8 +47,8 @@ export default function AlumniConnectPage() {
     refetchInterval: 60_000
   });
   const { data: universities } = useQuery({
-    queryKey: ["universities"],
-    queryFn: universitiesApi.list,
+    queryKey: ["universities", scopeKey],
+    queryFn: () => universitiesApi.list(scopeParams),
     enabled: canView
   });
 

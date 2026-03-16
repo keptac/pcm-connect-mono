@@ -72,7 +72,7 @@ class UnionRead(UnionBase):
 
 class ConferenceBase(SchemaModel):
     name: str
-    union_id: int
+    union_id: Optional[int] = None
     is_active: bool = True
 
 
@@ -158,6 +158,8 @@ class UserCreate(SchemaModel):
     name: Optional[str] = None
     password: str
     university_id: Optional[int] = None
+    conference_id: Optional[int] = None
+    union_id: Optional[int] = None
     roles: List[str] = Field(default_factory=list)
     force_password_reset: bool = False
     tenure_months: int = 24
@@ -169,6 +171,8 @@ class UserUpdate(SchemaModel):
     name: Optional[str] = None
     password: Optional[str] = None
     university_id: Optional[int] = None
+    conference_id: Optional[int] = None
+    union_id: Optional[int] = None
     roles: Optional[List[str]] = None
     force_password_reset: Optional[bool] = None
     tenure_months: Optional[int] = None
@@ -187,6 +191,10 @@ class UserRead(SchemaModel):
     name: Optional[str] = None
     university_id: Optional[int] = None
     university_name: Optional[str] = None
+    conference_id: Optional[int] = None
+    conference_name: Optional[str] = None
+    union_id: Optional[int] = None
+    union_name: Optional[str] = None
     member_id: Optional[str] = None
     member_number: Optional[str] = None
     member_status: Optional[str] = None
@@ -656,6 +664,8 @@ class ParsedRowRead(SchemaModel):
 class AuditLogRead(SchemaModel):
     id: int
     actor_user_id: Optional[int] = None
+    actor_name: Optional[str] = None
+    actor_number: Optional[str] = None
     action: str
     entity: str
     entity_id: Optional[str] = None

@@ -1,10 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from sqlalchemy import false
+
 from ...db.session import get_db
-from ...models import Conference, University
+from ...models import BroadcastInvite, Conference, Member, University, UploadedReport, User
 from ...schemas import UniversityCreate, UniversityRead, UniversityUpdate
-from ..deps import ADMIN_ROLES, CHAPTER_ROLES, GENERAL_NETWORK_ROLES, require_role
+from ...services.audit_log import log_action
+from ..deps import ADMIN_ROLES, CHAPTER_ROLES, GENERAL_NETWORK_ROLES, require_role, resolve_university_scope, resolve_visible_university_ids
 
 router = APIRouter(prefix="/universities", tags=["universities"])
 
@@ -18,6 +21,7 @@ def _serialize(university: University) -> UniversityRead:
         city=university.city,
         region=university.region,
         conference_id=university.conference_id,
+        union_id=university.conference.union_id if university.conference else None,
         conference_name=university.conference.name if university.conference else None,
         union_name=university.conference.union_name if university.conference else None,
         mission_focus=university.mission_focus,
@@ -33,12 +37,23 @@ def _serialize(university: University) -> UniversityRead:
 
 @router.get("", response_model=list[UniversityRead])
 def list_universities(
+    conference_id: int | None = None,
+    union_id: int | None = None,
     db: Session = Depends(get_db),
     user=Depends(require_role(GENERAL_NETWORK_ROLES)),
 ):
+    scoped_university_ids = resolve_visible_university_ids(
+        db,
+        user,
+        requested_conference_id=conference_id,
+        requested_union_id=union_id,
+    )
     query = db.query(University).order_by(University.name.asc())
-    if user.university_id:
-        query = query.filter(University.id == user.university_id)
+    if scoped_university_ids is not None:
+        if scoped_university_ids:
+            query = query.filter(University.id.in_(sorted(scoped_university_ids)))
+        else:
+            query = query.filter(false())
     return [_serialize(item) for item in query.all()]
 
 
@@ -70,6 +85,7 @@ def create_university(
     db.add(university)
     db.commit()
     db.refresh(university)
+    log_action(db, user.id, "create", "university", str(university.id), {"name": university.name})
     return _serialize(university)
 
 
@@ -83,8 +99,7 @@ def update_university(
     university = db.query(University).filter(University.id == university_id).first()
     if not university:
         raise HTTPException(status_code=404, detail="University not found")
-    if user.university_id and user.university_id != university.id:
-        raise HTTPException(status_code=403, detail="Invalid university scope")
+    resolve_university_scope(db, user, university.id)
 
     updates = payload.model_dump(exclude_unset=True)
     if "conference_id" in updates:
@@ -98,4 +113,35 @@ def update_university(
         setattr(university, key, value)
     db.commit()
     db.refresh(university)
+    log_action(db, user.id, "update", "university", str(university.id), {"name": university.name})
     return _serialize(university)
+
+
+@router.delete("/{university_id}")
+def delete_university(
+    university_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(require_role(ADMIN_ROLES)),
+):
+    university = db.query(University).filter(University.id == university_id).first()
+    if not university:
+        raise HTTPException(status_code=404, detail="University not found")
+
+    dependency_counts = {
+        "members": db.query(Member).filter(Member.university_id == university_id).count(),
+        "users": db.query(User).filter(User.university_id == university_id).count(),
+        "reports": db.query(UploadedReport).filter(UploadedReport.university_id == university_id).count(),
+        "broadcast invites": db.query(BroadcastInvite).filter(BroadcastInvite.university_id == university_id).count(),
+    }
+    blocking_dependencies = [f"{label} ({count})" for label, count in dependency_counts.items() if count]
+    if blocking_dependencies:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Remove linked records before deleting this university or campus: {', '.join(blocking_dependencies)}",
+        )
+
+    university_name = university.name
+    db.delete(university)
+    db.commit()
+    log_action(db, user.id, "delete", "university", str(university_id), {"name": university_name})
+    return {"status": "deleted"}

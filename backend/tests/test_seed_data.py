@@ -14,6 +14,7 @@ from app.db.base import Base
 from app.models import (
     AcademicProgram,
     CampusEvent,
+    Conference,
     FundingRecord,
     MarketplaceListing,
     MandatoryProgram,
@@ -23,6 +24,7 @@ from app.models import (
     ProgramUpdate,
     ReportingPeriod,
     Role,
+    Union,
     University,
     User,
     UserRole,
@@ -39,6 +41,7 @@ def test_seed_data_bootstraps_reference_catalog_and_marketplace_fixture_accounts
 
         assert db.query(Role).count() == len(DEFAULT_ROLES)
         assert db.query(User).count() >= 3
+        assert db.query(Union).count() >= 3
         assert db.query(University).count() == len(ZIMBABWE_ACADEMIC_INSTITUTION_SPECS)
         assert db.query(AcademicProgram).count() > 0
         assert db.query(ReportingPeriod).count() == len(REPORTING_PERIOD_SPECS)
@@ -54,6 +57,20 @@ def test_seed_data_bootstraps_reference_catalog_and_marketplace_fixture_accounts
         assert db.query(ProgramBroadcast).count() == 0
         assert db.query(MarketplaceListing).count() > 0
         assert len({listing.user_id for listing in db.query(MarketplaceListing).all()}) > 1
+        assert {
+            "Zimbabwe Central Union Conference",
+            "Zimbabwe East Union Conference",
+            "Zimbabwe West Union Conference",
+        }.issubset({item.name for item in db.query(Union).all()})
+        assert {
+            item.name: item.union.name if item.union else None
+            for item in db.query(Conference).all()
+        } == {
+            "North Zimbabwe Conference": "Zimbabwe Central Union Conference",
+            "East Zimbabwe Conference": "Zimbabwe East Union Conference",
+            "South Zimbabwe Conference": "Zimbabwe West Union Conference",
+            "Central Zimbabwe Conference": "Zimbabwe Central Union Conference",
+        }
 
         recovery_account = db.query(User).filter(User.email == "adam@pcm.service").first()
         assert recovery_account is not None

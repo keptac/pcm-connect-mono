@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { universitiesApi, usersApi } from "../api/endpoints";
+import { conferencesApi, universitiesApi, unionsApi, usersApi } from "../api/endpoints";
 import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatDate, formatNumber } from "../lib/format";
@@ -44,12 +44,51 @@ function KeyIcon() {
   );
 }
 
-function buildInitialForm(defaultUniversityId?: number | null, defaultRoles: string[] = ["student_admin"]) {
+function buildScopeValue(universityId?: number | null, conferenceId?: number | null, unionId?: number | null, fallbackValue = "network") {
+  if (universityId) return String(universityId);
+  if (conferenceId) return `conference:${conferenceId}`;
+  if (unionId) return `union:${unionId}`;
+  return fallbackValue;
+}
+
+function parseScopeValue(value?: string | null) {
+  if (!value || value === "network") {
+    return {
+      scopeType: "network" as const,
+      universityId: null,
+      unionId: null,
+    };
+  }
+  if (value.startsWith("union:")) {
+    return {
+      scopeType: "union" as const,
+      universityId: null,
+      conferenceId: null,
+      unionId: Number(value.slice("union:".length)) || null,
+    };
+  }
+  if (value.startsWith("conference:")) {
+    return {
+      scopeType: "conference" as const,
+      universityId: null,
+      conferenceId: Number(value.slice("conference:".length)) || null,
+      unionId: null,
+    };
+  }
+  return {
+    scopeType: "university" as const,
+    universityId: Number(value) || null,
+    conferenceId: null,
+    unionId: null,
+  };
+}
+
+function buildInitialForm(defaultScopeValue: string, defaultRoles: string[] = ["student_admin"]) {
   return {
     email: "",
     name: "",
     password: "",
-    university_id: defaultUniversityId ? String(defaultUniversityId) : "",
+    scope_value: defaultScopeValue,
     roles: defaultRoles,
     force_password_reset: true,
     tenure_months: String(DEFAULT_TENURE_MONTHS),
@@ -57,12 +96,12 @@ function buildInitialForm(defaultUniversityId?: number | null, defaultRoles: str
   };
 }
 
-function buildEditForm(user: any) {
+function buildEditForm(user: any, fallbackScopeValue = "network") {
   return {
     email: user.email || "",
     name: user.name || "",
     password: "",
-    university_id: user.university_id ? String(user.university_id) : "",
+    scope_value: buildScopeValue(user.university_id, user.conference_id, user.union_id, fallbackScopeValue),
     roles: user.roles?.length ? user.roles : ["student_admin"],
     force_password_reset: Boolean(user.force_password_reset),
     tenure_months: String(user.tenure_months || DEFAULT_TENURE_MONTHS),
@@ -78,36 +117,149 @@ function isManagedTeammate(user: any) {
   return Boolean(user.subject_to_tenure || user.roles?.includes("super_admin"));
 }
 
+function describeUserScope(user: any, universityLookup: Record<number, string>) {
+  if (user.university_id) {
+    return user.university_name || universityLookup[user.university_id] || `University #${user.university_id}`;
+  }
+  if (user.conference_id) {
+    return user.conference_name || `Conference #${user.conference_id}`;
+  }
+  if (user.union_id) {
+    return user.union_name || `Union #${user.union_id}`;
+  }
+  return user.member_university_name || "All universities";
+}
+
+function describeUserScopeType(user: any) {
+  if (user.university_id) return "University-scoped account";
+  if (user.conference_id) return "Conference-scoped account";
+  if (user.union_id) return "Union-scoped account";
+  if (user.member_university_id) return "Member-linked network account";
+  return "Network-wide account";
+}
+
 export default function UsersPage() {
   const client = useQueryClient();
   const currentUser = useAuthStore((state) => state.user);
-  const { roles, isSuperAdmin, canSelectUniversity, defaultUniversityId } = useUniversityScope();
+  const {
+    roles,
+    assignedConferenceId,
+    assignedUnionId,
+    isSuperAdmin,
+    canSelectNetwork,
+    canSelectUniversity,
+    defaultUniversityId,
+    scopedConferenceId,
+    scopedUnionId,
+    scopeKey,
+    scopeParams,
+  } = useUniversityScope();
   const canManageTeam = roles.some((role) => ["super_admin", "student_admin", "alumni_admin", "service_recovery"].includes(role));
   const canProvisionTeam = roles.some((role) => ["super_admin", "student_admin", "alumni_admin"].includes(role));
   const canRecoverPasswords = roles.some((role) => ["super_admin", "service_recovery"].includes(role));
+  const defaultScopeValue = useMemo(
+    () => buildScopeValue(defaultUniversityId, scopedConferenceId, scopedUnionId, "network"),
+    [defaultUniversityId, scopedConferenceId, scopedUnionId]
+  );
+  const scopeOptionParams = useMemo(() => {
+    if (currentUser?.university_id) return { universityId: currentUser.university_id };
+    if (currentUser?.conference_id) return { conferenceId: currentUser.conference_id };
+    if (currentUser?.union_id) return { unionId: currentUser.union_id };
+    return null;
+  }, [currentUser?.conference_id, currentUser?.university_id, currentUser?.union_id]);
 
   const { data: users } = useQuery({
-    queryKey: ["users"],
-    queryFn: usersApi.list,
+    queryKey: ["users", scopeKey],
+    queryFn: () => usersApi.list(scopeParams),
     enabled: canManageTeam
   });
-  const { data: universities } = useQuery({
-    queryKey: ["universities"],
-    queryFn: universitiesApi.list,
+  const { data: assignableUniversities } = useQuery({
+    queryKey: ["universities", "assignable", currentUser?.university_id || currentUser?.conference_id || currentUser?.union_id || "network"],
+    queryFn: () => universitiesApi.list(scopeOptionParams),
     enabled: canProvisionTeam
+  });
+  const { data: conferences } = useQuery({
+    queryKey: ["conferences", "assignable", currentUser?.conference_id || currentUser?.union_id || "network"],
+    queryFn: () => conferencesApi.list(true),
+    enabled: canProvisionTeam && canSelectUniversity
+  });
+  const { data: unions } = useQuery({
+    queryKey: ["unions", "assignable", currentUser?.conference_id || currentUser?.union_id || "network"],
+    queryFn: () => unionsApi.list(true),
+    enabled: canProvisionTeam && canSelectUniversity
   });
 
   const universityLookup = useMemo(
-    () => Object.fromEntries((universities || []).map((university: any) => [university.id, university.name])),
-    [universities]
+    () => Object.fromEntries((assignableUniversities || []).map((university: any) => [university.id, university.name])),
+    [assignableUniversities]
   );
+  const assignableUnions = useMemo(
+    () => (unions || []).filter((item: any) => !currentUser?.union_id || item.id === currentUser.union_id),
+    [currentUser?.union_id, unions]
+  );
+  const assignableConferences = useMemo(() => {
+    const items = conferences || [];
+    if (assignedConferenceId) {
+      return items.filter((item: any) => item.id === assignedConferenceId);
+    }
+    if (assignedUnionId) {
+      return items.filter((item: any) => item.union_id === assignedUnionId);
+    }
+    if (currentUser?.union_id) {
+      return items.filter((item: any) => item.union_id === currentUser.union_id);
+    }
+    return items;
+  }, [assignedConferenceId, assignedUnionId, conferences, currentUser?.union_id]);
+  const scopeGroups = useMemo(() => {
+    const grouped = new Map<string, { key: string; label: string; unionId: number | null; conferences: any[]; universities: any[] }>();
+
+    for (const union of assignableUnions) {
+      grouped.set(`union:${union.id}`, {
+        key: `union:${union.id}`,
+        label: union.name,
+        unionId: union.id,
+        conferences: [],
+        universities: [],
+      });
+    }
+
+    for (const conference of assignableConferences) {
+      const key = conference.union_id ? `union:${conference.union_id}` : `union:${conference.union_name || "other"}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          label: conference.union_name || "Other conferences / campuses",
+          unionId: conference.union_id ?? null,
+          conferences: [],
+          universities: [],
+        });
+      }
+      grouped.get(key)?.conferences.push(conference);
+    }
+
+    for (const university of assignableUniversities || []) {
+      const key = university.union_id ? `union:${university.union_id}` : `union:${university.union_name || "other"}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          label: university.union_name || "Other conferences / campuses",
+          unionId: university.union_id ?? null,
+          conferences: [],
+          universities: [],
+        });
+      }
+      grouped.get(key)?.universities.push(university);
+    }
+
+    return [...grouped.values()].sort((left, right) => left.label.localeCompare(right.label));
+  }, [assignableConferences, assignableUniversities, assignableUnions]);
   const usersPagination = usePagination(users);
   const lockedUniversityName = defaultUniversityId ? (universityLookup[defaultUniversityId] || currentUser?.university_name || "") : "";
   const lockedScopeLabel = lockedUniversityName || "Your university or campus";
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
-  const [form, setForm] = useState(() => buildInitialForm(defaultUniversityId, ["student_admin"]));
+  const [form, setForm] = useState(() => buildInitialForm(defaultScopeValue, ["student_admin"]));
   const [formError, setFormError] = useState("");
   const [pageError, setPageError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -119,12 +271,14 @@ export default function UsersPage() {
   const [isRecoveringPassword, setIsRecoveringPassword] = useState(false);
 
   const selectedRole = form.roles[0] || "";
+  const selectedScope = parseScopeValue(form.scope_value);
+  const isNetworkScope = selectedScope.scopeType === "network";
   const tenureExemptRole = selectedRole === "super_admin";
   const availableRoleOptions = useMemo(() => {
     const baseRoles = isSuperAdmin ? roleOptions : roleOptions.filter((role) => role !== "super_admin");
-    if (!form.university_id && isSuperAdmin) return baseRoles;
+    if (isNetworkScope && isSuperAdmin) return baseRoles;
     return baseRoles.filter((role) => !globalOnlyRoles.includes(role));
-  }, [form.university_id, isSuperAdmin]);
+  }, [isNetworkScope, isSuperAdmin]);
   const defaultProvisionRole = useMemo(
     () => availableRoleOptions.includes("student_admin") ? ["student_admin"] : [availableRoleOptions[0]].filter(Boolean),
     [availableRoleOptions]
@@ -148,27 +302,27 @@ export default function UsersPage() {
   }
 
   function resetForm() {
-    setForm(selectedUser ? buildEditForm(selectedUser) : buildInitialForm(defaultUniversityId, defaultProvisionRole));
+    setForm(selectedUser ? buildEditForm(selectedUser, defaultScopeValue) : buildInitialForm(defaultScopeValue, defaultProvisionRole));
     setFormError("");
   }
 
   function closeForm() {
     setIsFormOpen(false);
     setSelectedUser(null);
-    setForm(buildInitialForm(defaultUniversityId, defaultProvisionRole));
+    setForm(buildInitialForm(defaultScopeValue, defaultProvisionRole));
     setFormError("");
   }
 
   function openCreateForm() {
     setSelectedUser(null);
-    setForm(buildInitialForm(defaultUniversityId, defaultProvisionRole));
+    setForm(buildInitialForm(defaultScopeValue, defaultProvisionRole));
     setFormError("");
     setIsFormOpen(true);
   }
 
   function openEditForm(user: any) {
     setSelectedUser(user);
-    setForm(buildEditForm(user));
+    setForm(buildEditForm(user, defaultScopeValue));
     setFormError("");
     setIsFormOpen(true);
   }
@@ -283,18 +437,8 @@ export default function UsersPage() {
                           <div className="table-secondary">{item.email}</div>
                         </td>
                         <td>
-                          <div className="table-primary">
-                            {item.university_id
-                              ? (item.university_name || universityLookup[item.university_id] || `University #${item.university_id}`)
-                              : item.member_university_name || "Global scope"}
-                          </div>
-                          <div className="table-secondary">
-                            {item.university_id
-                              ? "University-scoped account"
-                              : item.member_university_id
-                                ? "Member-linked network account"
-                                : "Network-wide account"}
-                          </div>
+                          <div className="table-primary">{describeUserScope(item, universityLookup)}</div>
+                          <div className="table-secondary">{describeUserScopeType(item)}</div>
                         </td>
                         <td>
                           <div className="flex flex-wrap gap-2">
@@ -398,9 +542,7 @@ export default function UsersPage() {
               onExport={canProvisionTeam ? () => exportRowsAsCsv("team-users", (users || []).map((item: any) => ({
                 name: item.name || "",
                 email: item.email || "",
-                scope: item.university_id
-                  ? (item.university_name || universityLookup[item.university_id] || `University #${item.university_id}`)
-                  : item.member_university_name || "Global scope",
+                scope: describeUserScope(item, universityLookup),
                 roles: (item.roles || []).map((role: string) => formatRoleLabel(role)).join("; "),
                 tenure: item.roles.includes("super_admin")
                   ? "Super admin role exemption"
@@ -410,7 +552,7 @@ export default function UsersPage() {
                 tenure_months: item.tenure_months || "",
                 status: item.is_active ? "active" : "inactive",
                 deletion_due_at: item.deletion_due_at ? formatDate(item.deletion_due_at) : "",
-                scope_type: item.university_id ? "University-scoped account" : item.member_university_id ? "Member-linked network account" : "Network-wide account",
+                scope_type: describeUserScopeType(item),
                 member_status: item.member_status || "",
                 donor_interest: item.donor_interest ? "yes" : "no"
               }))) : undefined}
@@ -443,21 +585,20 @@ export default function UsersPage() {
 
               setIsSaving(true);
               try {
+                const resolvedScope = !canSelectUniversity
+                  ? parseScopeValue(buildScopeValue(defaultUniversityId, currentUser?.conference_id, currentUser?.union_id, "network"))
+                  : parseScopeValue(globalOnlyRoles.includes(selectedRole) ? "network" : form.scope_value);
                 const payload: Record<string, unknown> = {
                   email: form.email,
                   name: form.name || null,
                   roles: form.roles,
                   force_password_reset: form.force_password_reset,
-                  university_id: canSelectUniversity
-                    ? (form.university_id ? Number(form.university_id) : null)
-                    : (defaultUniversityId ?? selectedUser?.university_id ?? null),
+                  university_id: resolvedScope.scopeType === "university" ? resolvedScope.universityId : null,
+                  conference_id: resolvedScope.scopeType === "conference" ? resolvedScope.conferenceId : null,
+                  union_id: resolvedScope.scopeType === "union" ? resolvedScope.unionId : null,
                   tenure_months: tenureExemptRole ? undefined : Number(form.tenure_months || DEFAULT_TENURE_MONTHS),
                   tenure_starts_on: tenureExemptRole ? undefined : (form.tenure_starts_on || todayIsoDate())
                 };
-
-                if (selectedRole === "super_admin") {
-                  payload.university_id = null;
-                }
 
                 if (form.password) {
                   payload.password = form.password;
@@ -492,18 +633,36 @@ export default function UsersPage() {
             </label>
             {canSelectUniversity ? (
               <label className="field-shell">
-                <span className="field-label">University / campus scope</span>
-                <select className="field-input" value={selectedRole === "super_admin" ? "" : form.university_id} onChange={(event) => setForm({ ...form, university_id: event.target.value })}>
-                  <option value="">Global access</option>
-                  {universities?.map((university: any) => (
-                    <option key={university.id} value={university.id}>{university.name}</option>
+                <span className="field-label">Scope</span>
+                <select
+                  className="field-input"
+                  value={globalOnlyRoles.includes(selectedRole) ? "network" : form.scope_value}
+                  onChange={(event) => setForm({ ...form, scope_value: event.target.value })}
+                >
+                  {canSelectNetwork ? <option value="network">All universities</option> : null}
+                  {scopeGroups.map((group) => (
+                    <optgroup key={group.key} label={group.label}>
+                      {!currentUser?.conference_id && group.unionId ? (
+                        <option value={`union:${group.unionId}`}>Entire union</option>
+                      ) : null}
+                      {group.conferences.map((conference: any) => (
+                        <option key={`conference-${conference.id}`} value={`conference:${conference.id}`}>
+                          Conference: {conference.name}
+                        </option>
+                      ))}
+                      {group.universities.map((university: any) => (
+                        <option key={`university-${university.id}`} value={String(university.id)}>
+                          Campus: {university.name}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </label>
             ) : (
               <div className="field-shell">
-                <span className="field-label">University / campus scope</span>
-                <div className="field-input flex items-center text-slate-600">{selectedRole === "super_admin" ? "Global access" : lockedScopeLabel}</div>
+                <span className="field-label">Scope</span>
+                <div className="field-input flex items-center text-slate-600">{lockedScopeLabel}</div>
               </div>
             )}
 

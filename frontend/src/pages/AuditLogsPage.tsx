@@ -6,6 +6,14 @@ import { exportRowsAsCsv } from "../lib/export";
 import { formatDate } from "../lib/format";
 import { useAuthStore } from "../store/auth";
 
+function formatActorLabel(log: any) {
+  if (!log.actor_user_id) return { primary: "System", secondary: "" };
+  return {
+    primary: log.actor_name || `User #${log.actor_user_id}`,
+    secondary: log.actor_number ? `#${log.actor_number}` : `#${log.actor_user_id}`
+  };
+}
+
 export default function AuditLogsPage() {
   const { user } = useAuthStore();
   const isAdmin = user?.roles?.includes("super_admin");
@@ -56,7 +64,10 @@ export default function AuditLogsPage() {
                         <div className="table-primary">{log.action}</div>
                         <div className="table-secondary">{log.entity}</div>
                       </td>
-                      <td>#{log.actor_user_id || "system"}</td>
+                      <td>
+                        <div className="table-primary">{formatActorLabel(log).primary}</div>
+                        <div className="table-secondary">{formatActorLabel(log).secondary || "System"}</div>
+                      </td>
                       <td>
                         <StatusBadge label={log.entity_id || "no entity"} tone="info" />
                       </td>
@@ -78,7 +89,8 @@ export default function AuditLogsPage() {
                 id: log.id,
                 action: log.action,
                 entity: log.entity,
-                actor: log.actor_user_id || "system",
+                actor: formatActorLabel(log).primary,
+                actor_number: formatActorLabel(log).secondary || "",
                 entity_id: log.entity_id || "",
                 date: formatDate(log.created_at),
                 meta: JSON.stringify(log.meta || {})

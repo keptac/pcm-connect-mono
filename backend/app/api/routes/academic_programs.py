@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from ...db.session import get_db
 from ...models import AcademicProgram
 from ...schemas import AcademicProgramRead
-from ..deps import CHAPTER_ROLES, require_role, resolve_university_scope
+from ..deps import CHAPTER_ROLES, apply_university_scope_filter, require_role, resolve_visible_university_ids
 
 router = APIRouter(prefix="/academic-programs", tags=["academic-programs"])
 
@@ -26,14 +26,21 @@ def _serialize(program: AcademicProgram) -> AcademicProgramRead:
 @router.get("", response_model=list[AcademicProgramRead])
 def list_academic_programs(
     university_id: int | None = None,
+    conference_id: int | None = None,
+    union_id: int | None = None,
     active_only: bool = True,
     db: Session = Depends(get_db),
     user=Depends(require_role(CHAPTER_ROLES)),
 ):
-    scoped_university_id = resolve_university_scope(user, university_id)
+    scoped_university_ids = resolve_visible_university_ids(
+        db,
+        user,
+        requested_university_id=university_id,
+        requested_conference_id=conference_id,
+        requested_union_id=union_id,
+    )
     query = db.query(AcademicProgram).order_by(AcademicProgram.name.asc())
-    if scoped_university_id:
-        query = query.filter(AcademicProgram.university_id == scoped_university_id)
+    query = apply_university_scope_filter(query, AcademicProgram, scoped_university_ids)
     if active_only:
         query = query.filter(AcademicProgram.is_active.is_(True))
     return [_serialize(item) for item in query.all()]

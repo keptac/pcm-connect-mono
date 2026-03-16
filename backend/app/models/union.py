@@ -15,3 +15,4 @@ class Union(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     conferences = relationship("Conference", back_populates="union")
+    users = relationship("User", back_populates="union")

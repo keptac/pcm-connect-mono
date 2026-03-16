@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { reportsApi, templatesApi, universitiesApi } from "../api/endpoints";
+import { UniversitySelectOptions } from "../components/UniversitySelectOptions";
 import { useAuthStore } from "../store/auth";
 
 export default function UploadReportPage() {
@@ -36,10 +37,7 @@ export default function UploadReportPage() {
             ))}
           </select>
           <select className="border rounded-xl p-2" value={universityId} onChange={(e) => setUniversityId(e.target.value)}>
-            <option value="">University</option>
-            {universities?.map((uni: any) => (
-              <option key={uni.id} value={uni.id}>{uni.name}</option>
-            ))}
+            <UniversitySelectOptions universities={universities} emptyOptionLabel="University" />
           </select>
         </div>
         <input type="file" accept=".csv,.xlsx" onChange={(e) => setFile(e.target.files?.[0] || null)} />

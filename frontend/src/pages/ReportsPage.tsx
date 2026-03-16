@@ -2,6 +2,7 @@ import { type FormEvent, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { reportsApi, universitiesApi } from "../api/endpoints";
+import { UniversitySelectOptions } from "../components/UniversitySelectOptions";
 import { EmptyState, MetricCard, PageHeader, Panel, StatusBadge } from "../components/ui";
 import { formatDate, formatNumber } from "../lib/format";
 import { useUniversityScope } from "../lib/universityScope";
@@ -41,7 +42,7 @@ function buildInitialForm(defaultUniversityId?: number | null) {
 
 export default function ReportsPage() {
   const client = useQueryClient();
-  const { roles, canSelectUniversity, scopedUniversityId, defaultUniversityId } = useUniversityScope();
+  const { roles, canSelectUniversity, defaultUniversityId, scopeKey, scopeParams } = useUniversityScope();
   const canManage = roles.some((role) => ["super_admin", "student_admin", "secretary"].includes(role));
 
   const [form, setForm] = useState(() => buildInitialForm(defaultUniversityId));
@@ -51,13 +52,13 @@ export default function ReportsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { data: universities } = useQuery({
-    queryKey: ["universities"],
-    queryFn: universitiesApi.list,
+    queryKey: ["universities", scopeKey],
+    queryFn: () => universitiesApi.list(scopeParams),
     enabled: canManage
   });
   const { data: reports } = useQuery({
-    queryKey: ["reports", scopedUniversityId],
-    queryFn: () => reportsApi.list(scopedUniversityId),
+    queryKey: ["reports", scopeKey],
+    queryFn: () => reportsApi.list(scopeParams),
     enabled: canManage
   });
   const { data: rows } = useQuery({
@@ -233,10 +234,7 @@ export default function ReportsPage() {
                     value={form.university_id}
                     onChange={(event) => setForm((current) => ({ ...current, university_id: event.target.value }))}
                   >
-                    <option value="">Select university or campus</option>
-                    {universities?.map((university: any) => (
-                      <option key={university.id} value={university.id}>{university.name}</option>
-                    ))}
+                    <UniversitySelectOptions universities={universities} emptyOptionLabel="Select university or campus" />
                   </select>
                 </label>
               ) : (

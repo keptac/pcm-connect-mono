@@ -1,18 +1,27 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { adminApi, conferencesApi, mandatoryProgramsApi, reportingPeriodsApi } from "../api/endpoints";
+import { adminApi, conferencesApi, mandatoryProgramsApi, reportingPeriodsApi, unionsApi } from "../api/endpoints";
 import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatDate, formatNumber } from "../lib/format";
 import { useAuthStore } from "../store/auth";
 
+function formatActorLabel(log: any) {
+  if (!log.actor_user_id) return { primary: "System", secondary: "" };
+  return {
+    primary: log.actor_name || `User #${log.actor_user_id}`,
+    secondary: log.actor_number ? `#${log.actor_number}` : `#${log.actor_user_id}`
+  };
+}
+
 export default function AdminPage() {
   const client = useQueryClient();
   const { user } = useAuthStore();
   const isAdmin = user?.roles?.includes("super_admin");
-  const [activeSection, setActiveSection] = useState<"conferences" | "reporting_periods" | "mandatory_programs">("conferences");
+  const [activeSection, setActiveSection] = useState<"unions" | "conferences" | "reporting_periods" | "mandatory_programs">("unions");
   const [selectedMandatoryId, setSelectedMandatoryId] = useState<number | null>(null);
+  const [selectedUnionId, setSelectedUnionId] = useState<number | null>(null);
   const [selectedConferenceId, setSelectedConferenceId] = useState<number | null>(null);
   const [selectedReportingPeriodId, setSelectedReportingPeriodId] = useState<number | null>(null);
   const [isTransitionDialogOpen, setIsTransitionDialogOpen] = useState(false);
@@ -27,9 +36,13 @@ export default function AdminPage() {
     is_active: true,
     allow_other_detail: false
   });
+  const [unionForm, setUnionForm] = useState({
+    name: "",
+    is_active: true
+  });
   const [conferenceForm, setConferenceForm] = useState({
     name: "",
-    union_name: "Zimbabwe East Union Conference",
+    union_id: "",
     is_active: true
   });
   const [reportingPeriodForm, setReportingPeriodForm] = useState({
@@ -51,6 +64,11 @@ export default function AdminPage() {
     queryFn: () => mandatoryProgramsApi.list({ programType: "event", includeInactive: true }),
     enabled: isAdmin
   });
+  const { data: unions } = useQuery({
+    queryKey: ["unions"],
+    queryFn: () => unionsApi.list(false),
+    enabled: isAdmin
+  });
   const { data: conferences } = useQuery({
     queryKey: ["conferences"],
     queryFn: () => conferencesApi.list(false),
@@ -61,6 +79,8 @@ export default function AdminPage() {
     queryFn: () => reportingPeriodsApi.list(true),
     enabled: isAdmin
   });
+  const unionDirectoryDefaultId = String((unions || []).find((item: any) => item.name === "Zimbabwe East Union Conference")?.id || unions?.[0]?.id || "");
+  const unionsPagination = usePagination(unions);
   const conferencesPagination = usePagination(conferences);
   const reportingPeriodsPagination = usePagination(reportingPeriods);
   const mandatoryProgramsPagination = usePagination(mandatoryPrograms);
@@ -79,6 +99,12 @@ export default function AdminPage() {
     return () => window.clearInterval(intervalId);
   }, [transitionState]);
 
+  useEffect(() => {
+    if (!conferenceForm.union_id && unionDirectoryDefaultId) {
+      setConferenceForm((current) => current.union_id ? current : { ...current, union_id: unionDirectoryDefaultId });
+    }
+  }, [conferenceForm.union_id, unionDirectoryDefaultId]);
+
   if (!isAdmin) {
     return <Panel><p className="text-sm text-slate-600">Admin access required.</p></Panel>;
   }
@@ -93,11 +119,19 @@ export default function AdminPage() {
     });
   }
 
+  function resetUnionForm() {
+    setSelectedUnionId(null);
+    setUnionForm({
+      name: "",
+      is_active: true
+    });
+  }
+
   function resetConferenceForm() {
     setSelectedConferenceId(null);
     setConferenceForm({
       name: "",
-      union_name: "Zimbabwe East Union Conference",
+      union_id: unionDirectoryDefaultId,
       is_active: true
     });
   }
@@ -149,7 +183,8 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-8">
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid gap-4 xl:grid-cols-5">
+        <MetricCard label="Unions" value={formatNumber(unions?.length)} />
         <MetricCard label="Audit entries" value={formatNumber(logs?.length)} helper="Recent actions available in the audit trail" />
         <MetricCard label="Mandatory events" value={formatNumber(mandatoryPrograms?.length)} tone="gold" helper="Configured update events across the network" />
         <MetricCard label="Reporting periods" value={formatNumber(reportingPeriods?.length)} tone="coral" helper="Configured submission windows for updates and coverage" />
@@ -174,6 +209,13 @@ export default function AdminPage() {
               Open audit logs
             </button>
             <button
+              className={activeSection === "unions" ? "primary-button" : "secondary-button"}
+              type="button"
+              onClick={() => setActiveSection("unions")}
+            >
+              Unions
+            </button>
+            <button
               className={activeSection === "conferences" ? "primary-button" : "secondary-button"}
               type="button"
               onClick={() => setActiveSection("conferences")}
@@ -196,6 +238,120 @@ export default function AdminPage() {
             </button>
           </div>
         </div>
+
+        {activeSection === "unions" ? (
+          <div className="space-y-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="eyebrow">Union directory</p>
+                <h3 className="text-xl font-semibold text-slate-950">Union setup</h3>
+              </div>
+              {selectedUnionId ? (
+                <button className="secondary-button" type="button" onClick={resetUnionForm}>
+                  Clear
+                </button>
+              ) : null}
+            </div>
+
+            <div className="grid items-start gap-6 xl:grid-cols-[0.82fr_1.18fr]">
+              <div className="space-y-5 rounded-[12px] border border-slate-200/80 bg-white/85 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
+                <div>
+                  <p className="eyebrow">Union editor</p>
+                  <h4 className="text-lg font-semibold text-slate-950">{selectedUnionId ? "Update union" : "Add union"}</h4>
+                </div>
+                <form
+                  className="grid gap-4"
+                  onSubmit={async (event) => {
+                    event.preventDefault();
+                    const payload = {
+                      name: unionForm.name,
+                      is_active: unionForm.is_active
+                    };
+                    if (selectedUnionId) {
+                      await unionsApi.update(selectedUnionId, payload);
+                    } else {
+                      await unionsApi.create(payload);
+                    }
+                    await client.invalidateQueries({ queryKey: ["unions"] });
+                    await client.invalidateQueries({ queryKey: ["conferences"] });
+                    await client.invalidateQueries({ queryKey: ["universities"] });
+                    resetUnionForm();
+                  }}
+                >
+                  <label className="field-shell">
+                    <span className="field-label">Union name</span>
+                    <input className="field-input" value={unionForm.name} onChange={(event) => setUnionForm({ ...unionForm, name: event.target.value })} placeholder="Zimbabwe East Union Conference" />
+                  </label>
+                  <label className="field-shell field-checkbox">
+                    <span className="field-label">Active union</span>
+                    <input type="checkbox" checked={unionForm.is_active} onChange={(event) => setUnionForm({ ...unionForm, is_active: event.target.checked })} />
+                  </label>
+                  <button className="primary-button" type="submit">
+                    {selectedUnionId ? "Save union" : "Add union"}
+                  </button>
+                </form>
+              </div>
+
+              {!unions?.length ? (
+                <EmptyState title="No unions configured" />
+              ) : (
+                <div className="space-y-5 rounded-[12px] border border-slate-200/80 bg-white/85 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
+                  <div>
+                    <p className="eyebrow">Union directory</p>
+                    <h4 className="text-lg font-semibold text-slate-950">Configured unions</h4>
+                  </div>
+                  <div className="table-shell">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Union</th>
+                          <th>Conferences</th>
+                          <th>Status</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {unionsPagination.pageItems.map((union: any) => (
+                          <tr key={union.id}>
+                            <td><div className="table-primary">{union.name}</div></td>
+                            <td>{formatNumber(union.conference_count)}</td>
+                            <td>
+                              <StatusBadge label={union.is_active ? "active" : "inactive"} tone={union.is_active ? "success" : "warning"} />
+                            </td>
+                            <td>
+                              <div className="table-actions">
+                                <TableActionButton
+                                  label="Edit union"
+                                  tone="edit"
+                                  onClick={() => {
+                                    setSelectedUnionId(union.id);
+                                    setUnionForm({
+                                      name: union.name || "",
+                                      is_active: union.is_active ?? true
+                                    });
+                                  }}
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <TablePagination
+                    pagination={unionsPagination}
+                    itemLabel="unions"
+                    onExport={() => exportRowsAsCsv("union-directory", (unions || []).map((union: any) => ({
+                      union: union.name,
+                      conference_count: union.conference_count || 0,
+                      status: union.is_active ? "active" : "inactive"
+                    })))}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
 
         {activeSection === "conferences" ? (
           <div className="space-y-5">
@@ -224,7 +380,7 @@ export default function AdminPage() {
                     event.preventDefault();
                     const payload = {
                       name: conferenceForm.name,
-                      union_name: conferenceForm.union_name,
+                      union_id: Number(conferenceForm.union_id),
                       is_active: conferenceForm.is_active
                     };
                     if (selectedConferenceId) {
@@ -233,6 +389,7 @@ export default function AdminPage() {
                       await conferencesApi.create(payload);
                     }
                     await client.invalidateQueries({ queryKey: ["conferences"] });
+                    await client.invalidateQueries({ queryKey: ["unions"] });
                     await client.invalidateQueries({ queryKey: ["universities"] });
                     resetConferenceForm();
                   }}
@@ -242,8 +399,13 @@ export default function AdminPage() {
                     <input className="field-input" value={conferenceForm.name} onChange={(event) => setConferenceForm({ ...conferenceForm, name: event.target.value })} placeholder="North Zimbabwe Conference" />
                   </label>
                   <label className="field-shell">
-                    <span className="field-label">Union name</span>
-                    <input className="field-input" value={conferenceForm.union_name} onChange={(event) => setConferenceForm({ ...conferenceForm, union_name: event.target.value })} placeholder="Zimbabwe East Union Conference" />
+                    <span className="field-label">Union</span>
+                    <select className="field-input" value={conferenceForm.union_id} onChange={(event) => setConferenceForm({ ...conferenceForm, union_id: event.target.value })} required>
+                      <option value="">Select union</option>
+                      {unions?.map((union: any) => (
+                        <option key={union.id} value={union.id}>{union.name}</option>
+                      ))}
+                    </select>
                   </label>
                   <label className="field-shell field-checkbox">
                     <span className="field-label">Active conference</span>
@@ -291,16 +453,16 @@ export default function AdminPage() {
                             <td>
                               <div className="table-actions">
                                 <TableActionButton
-                                  label="Edit conference"
-                                  tone="edit"
-                                  onClick={() => {
-                                    setSelectedConferenceId(conference.id);
-                                    setConferenceForm({
-                                      name: conference.name || "",
-                                      union_name: conference.union_name || "",
-                                      is_active: conference.is_active ?? true
-                                    });
-                                  }}
+                                      label="Edit conference"
+                                      tone="edit"
+                                      onClick={() => {
+                                        setSelectedConferenceId(conference.id);
+                                        setConferenceForm({
+                                          name: conference.name || "",
+                                          union_id: conference.union_id ? String(conference.union_id) : unionDirectoryDefaultId,
+                                          is_active: conference.is_active ?? true
+                                        });
+                                      }}
                                 />
                               </div>
                             </td>
@@ -772,7 +934,10 @@ export default function AdminPage() {
                           <div className="table-primary">{log.entity}</div>
                           <div className="table-secondary">{log.entity_id || "No entity id"}</div>
                         </td>
-                        <td>#{log.actor_user_id || "system"}</td>
+                        <td>
+                          <div className="table-primary">{formatActorLabel(log).primary}</div>
+                          <div className="table-secondary">{formatActorLabel(log).secondary || "System"}</div>
+                        </td>
                         <td>
                           <div className="table-secondary">
                             {log.meta && Object.keys(log.meta).length > 0 ? JSON.stringify(log.meta) : "No additional metadata"}
@@ -791,7 +956,8 @@ export default function AdminPage() {
                   action: log.action,
                   entity: log.entity,
                   entity_id: log.entity_id || "",
-                  actor: log.actor_user_id || "system",
+                  actor: formatActorLabel(log).primary,
+                  actor_number: formatActorLabel(log).secondary || "",
                   details: log.meta && Object.keys(log.meta).length > 0 ? JSON.stringify(log.meta) : "No additional metadata"
                 })))}
               />

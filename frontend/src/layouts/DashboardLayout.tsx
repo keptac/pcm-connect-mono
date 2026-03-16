@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { authApi, messagesApi, usersMeApi, universitiesApi } from "../api/endpoints";
+import { authApi, conferencesApi, messagesApi, unionsApi, usersMeApi, universitiesApi } from "../api/endpoints";
 import pcmLogo from "../images/pcm_logo.png";
 import { canAccessAlumniConnect } from "../lib/alumniConnectAccess";
 import { APP_VERSION } from "../lib/appVersion";
@@ -157,8 +157,8 @@ export default function DashboardLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const token = localStorage.getItem("pcm_access_token");
-  const { setUser, setActiveUniversityId } = useAuthStore();
-  const { user, roles, isSuperAdmin, canSelectUniversity, scopedUniversityId } = useUniversityScope();
+  const { setUser, setActiveConferenceId, setActiveUniversityId, setActiveUnionId } = useAuthStore();
+  const { user, roles, isSuperAdmin, assignedConferenceId, assignedUnionId, canSelectNetwork, canSelectUniversity, scopedConferenceId, scopedUniversityId, scopedUnionId } = useUniversityScope();
   const canViewMessages = roles.some((role) => networkRoles.includes(role));
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -180,8 +180,18 @@ export default function DashboardLayout() {
 
   const universitiesQuery = useQuery({
     queryKey: ["universities"],
-    queryFn: universitiesApi.list,
+    queryFn: () => universitiesApi.list(),
     enabled: Boolean(token) && meQuery.isSuccess && !mustChangePassword
+  });
+  const unionsQuery = useQuery({
+    queryKey: ["unions"],
+    queryFn: () => unionsApi.list(true),
+    enabled: Boolean(token) && meQuery.isSuccess && !mustChangePassword && canSelectUniversity
+  });
+  const conferencesQuery = useQuery({
+    queryKey: ["conferences"],
+    queryFn: () => conferencesApi.list(true),
+    enabled: Boolean(token) && meQuery.isSuccess && !mustChangePassword && canSelectUniversity
   });
   const messageConversationsQuery = useQuery({
     queryKey: ["message-conversations"],
@@ -266,9 +276,70 @@ export default function DashboardLayout() {
   const activeItem = visibleNav.find((item) => item.to === location.pathname) || visibleNav.find((item) => location.pathname.startsWith(item.to) && item.to !== "/");
   const activeHelpItem = helpMenuItems.find((item) => item.to === location.pathname);
   const scopedUniversity = universitiesQuery.data?.find((university: any) => university.id === scopedUniversityId);
+  const scopedConference = conferencesQuery.data?.find((conference: any) => conference.id === scopedConferenceId);
+  const scopedUnion = unionsQuery.data?.find((item: any) => item.id === scopedUnionId);
+  const visibleScopeUnionId = scopedUnionId ?? scopedConference?.union_id ?? scopedUniversity?.union_id ?? null;
+  const selectableUnions = assignedUnionId
+    ? (unionsQuery.data || []).filter((item: any) => item.id === assignedUnionId)
+    : (unionsQuery.data || []);
+  const selectableConferences = assignedConferenceId
+    ? (conferencesQuery.data || []).filter((item: any) => item.id === assignedConferenceId)
+    : assignedUnionId
+      ? (conferencesQuery.data || []).filter((item: any) => item.union_id === assignedUnionId)
+      : (conferencesQuery.data || []);
+  const scopeGroups = (() => {
+    const grouped = new Map<string, { key: string; label: string; unionId: number | null; conferences: any[]; universities: any[] }>();
+    for (const union of selectableUnions) {
+      grouped.set(`union:${union.id}`, {
+        key: `union:${union.id}`,
+        label: union.name,
+        unionId: union.id,
+        conferences: [],
+        universities: [],
+      });
+    }
+    for (const conference of selectableConferences) {
+      if (visibleScopeUnionId && conference.union_id !== visibleScopeUnionId) continue;
+      const key = conference.union_id ? `union:${conference.union_id}` : `union:${conference.union_name || "other"}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          label: conference.union_name || "Other conferences / campuses",
+          unionId: conference.union_id ?? null,
+          conferences: [],
+          universities: [],
+        });
+      }
+      grouped.get(key)?.conferences.push(conference);
+    }
+    for (const university of universitiesQuery.data || []) {
+      if (visibleScopeUnionId && university.union_id !== visibleScopeUnionId) continue;
+      const key = university.union_id ? `union:${university.union_id}` : `union:${university.union_name || "other"}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          key,
+          label: university.union_name || "Other conferences / campuses",
+          unionId: university.union_id ?? null,
+          conferences: [],
+          universities: [],
+        });
+      }
+      grouped.get(key)?.universities.push(university);
+    }
+    return [...grouped.values()].sort((left, right) => left.label.localeCompare(right.label));
+  })();
+  const activeTitle = mustChangePassword && !activeHelpItem ? "Password reset required" : activeItem?.label || activeHelpItem?.label || "Operations";
+  const activeSubtitle = mustChangePassword && !activeHelpItem
+    ? "Update your password before continuing."
+    : activeItem?.description || "";
   const affiliationLabel = user?.member_university_name || scopedUniversity?.name;
+  const scopeSelectValue = scopedUniversityId ? `university:${scopedUniversityId}` : scopedConferenceId ? `conference:${scopedConferenceId}` : scopedUnionId ? `union:${scopedUnionId}` : "";
   const scopeStatusLabel = isSuperAdmin
     ? null
+    : scopedUnion
+      ? `Scoped to ${scopedUnion.name}`
+    : scopedConference
+      ? `Scoped to ${scopedConference.name}`
     : scopedUniversity
       ? `Scoped to ${scopedUniversity.name}`
       : affiliationLabel
@@ -339,7 +410,10 @@ export default function DashboardLayout() {
                       {unreadMessageLabel}
                     </span>
                   ) : null}
-                  <span className="sidebar-nav-label font-semibold text-slate-900">{item.label}</span>
+                  <div className="min-w-0">
+                    <div className="sidebar-nav-label font-semibold text-slate-900">{item.label}</div>
+                    {item.description ? <div className="sidebar-nav-description mt-1 text-slate-500">{item.description}</div> : null}
+                  </div>
                 </div>
               </NavLink>
             ))}
@@ -376,24 +450,55 @@ export default function DashboardLayout() {
 
             <div>
               <h2 className="text-2xl font-semibold text-slate-950">
-                {mustChangePassword && !activeHelpItem ? "Password reset required" : activeItem?.label || activeHelpItem?.label || "Operations"}
+                {activeTitle}
               </h2>
+              {activeSubtitle ? <p className="mt-1 text-sm text-slate-500">{activeSubtitle}</p> : null}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {!mustChangePassword && canSelectUniversity ? (
               <label className="field-shell min-w-[220px]">
-                <span className="field-label">University / campus scope</span>
+                <span className="field-label">Scope</span>
                 <select
                   className="field-input"
-                  value={scopedUniversityId ?? ""}
-                  onChange={(event) => setActiveUniversityId(event.target.value ? Number(event.target.value) : null)}
+                  value={scopeSelectValue}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    if (!nextValue) {
+                      setActiveUniversityId(null);
+                      setActiveUnionId(null);
+                      return;
+                    }
+                    const [scopeType, rawId] = nextValue.split(":");
+                    const nextId = rawId ? Number(rawId) : null;
+                    if (scopeType === "conference") {
+                      setActiveConferenceId(nextId);
+                      return;
+                    }
+                    if (scopeType === "union") {
+                      setActiveUnionId(nextId);
+                      return;
+                    }
+                    setActiveUniversityId(nextId);
+                  }}
                 >
-                  <option value="">All universities and campuses</option>
-                  {universitiesQuery.data?.map((university: any) => (
-                    <option key={university.id} value={university.id}>
-                      {university.name}
-                    </option>
+                  {canSelectNetwork ? <option value="">All universities</option> : null}
+                  {scopeGroups.map((group) => (
+                    <optgroup key={group.key} label={group.label}>
+                      {!user?.conference_id && group.unionId ? (
+                        <option value={`union:${group.unionId}`}>Entire union</option>
+                      ) : null}
+                      {group.conferences.map((conference: any) => (
+                        <option key={`conference-${conference.id}`} value={`conference:${conference.id}`}>
+                          Conference: {conference.name}
+                        </option>
+                      ))}
+                      {group.universities.map((university: any) => (
+                        <option key={`university-${university.id}`} value={`university:${university.id}`}>
+                          Campus: {university.name}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
               </label>

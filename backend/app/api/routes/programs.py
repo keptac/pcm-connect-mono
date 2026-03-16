@@ -9,7 +9,13 @@ from ...models import Program, University
 from ...schemas import ProgramCreate, ProgramRead, ProgramUpdatePayload
 from ...services.audit_log import log_action
 from ...services.rbac import get_user_roles
-from ..deps import PROGRAM_ROLES, require_role, resolve_university_scope
+from ..deps import (
+    PROGRAM_ROLES,
+    apply_university_scope_filter,
+    require_role,
+    resolve_university_scope,
+    resolve_visible_university_ids,
+)
 
 router = APIRouter(prefix="/programs", tags=["programs"])
 NETWORK_PROGRAM_LABEL = "All universities and campuses"
@@ -43,20 +49,20 @@ def _calculate_duration_weeks(start_date: date | None, end_date: date | None) ->
     return round(duration_days / 7, 1)
 
 
-def _resolve_program_scope(user, requested_university_id: int | None) -> int | None:
+def _resolve_program_scope(db: Session, user, requested_university_id: int | None) -> int | None:
     if requested_university_id is None:
-        if user.university_id:
+        if user.university_id or user.union_id:
             raise HTTPException(status_code=403, detail="Only global-access users can manage network-wide programs")
         return None
-    return resolve_university_scope(user, requested_university_id)
+    return resolve_university_scope(db, user, requested_university_id)
 
 
-def _ensure_program_mutation_access(user, program: Program) -> None:
+def _ensure_program_mutation_access(db: Session, user, program: Program) -> None:
     if program.university_id is None:
-        if user.university_id:
+        if user.university_id or user.union_id:
             raise HTTPException(status_code=403, detail="Only global-access users can modify network-wide programs")
         return
-    resolve_university_scope(user, program.university_id)
+    resolve_university_scope(db, user, program.university_id)
 
 
 def _enforce_program_role_rules(db: Session, user, audience: str | None) -> None:
@@ -100,13 +106,20 @@ def _serialize(program: Program) -> ProgramRead:
 @router.get("", response_model=list[ProgramRead])
 def list_programs(
     university_id: int | None = None,
+    conference_id: int | None = None,
+    union_id: int | None = None,
     db: Session = Depends(get_db),
     user=Depends(require_role(PROGRAM_ROLES)),
 ):
-    scoped_university_id = resolve_university_scope(user, university_id)
+    scoped_university_ids = resolve_visible_university_ids(
+        db,
+        user,
+        requested_university_id=university_id,
+        requested_conference_id=conference_id,
+        requested_union_id=union_id,
+    )
     query = db.query(Program).order_by(Program.name.asc())
-    if scoped_university_id:
-        query = query.filter(or_(Program.university_id == scoped_university_id, Program.university_id.is_(None)))
+    query = apply_university_scope_filter(query, Program, scoped_university_ids, include_network_records=True)
     return [_serialize(item) for item in query.all()]
 
 
@@ -116,7 +129,7 @@ def create_program(
     db: Session = Depends(get_db),
     user=Depends(require_role(PROGRAM_ROLES)),
 ):
-    scoped_university_id = _resolve_program_scope(user, payload.university_id)
+    scoped_university_id = _resolve_program_scope(db, user, payload.university_id)
     audience = _normalize_audience(payload.audience)
     _enforce_program_role_rules(db, user, audience)
     _validate_program_window(payload.start_date, payload.end_date)
@@ -152,7 +165,7 @@ def update_program(
     if not program:
         raise HTTPException(status_code=404, detail="Program not found")
 
-    _ensure_program_mutation_access(user, program)
+    _ensure_program_mutation_access(db, user, program)
 
     updates = payload.model_dump(exclude_unset=True)
     target_audience = _normalize_audience(updates["audience"]) if "audience" in updates else _normalize_audience(program.audience)
@@ -161,7 +174,7 @@ def update_program(
     merged_end_date = updates["end_date"] if "end_date" in updates else program.end_date
     _validate_program_window(merged_start_date, merged_end_date)
     if "university_id" in updates:
-        updates["university_id"] = _resolve_program_scope(user, updates.get("university_id"))
+        updates["university_id"] = _resolve_program_scope(db, user, updates.get("university_id"))
         if updates["university_id"] is not None:
             university = db.query(University).filter(University.id == updates["university_id"]).first()
             if not university:
@@ -188,7 +201,7 @@ def delete_program(
     program = db.query(Program).filter(Program.id == program_id).first()
     if not program:
         raise HTTPException(status_code=404, detail="Program not found")
-    _ensure_program_mutation_access(user, program)
+    _ensure_program_mutation_access(db, user, program)
     if _is_reported_completed_program(program):
         raise HTTPException(
             status_code=409,

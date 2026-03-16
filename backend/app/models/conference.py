@@ -18,3 +18,4 @@ class Conference(Base):
 
     union = relationship("Union", back_populates="conferences")
     universities = relationship("University", back_populates="conference")
+    users = relationship("User", back_populates="conference")

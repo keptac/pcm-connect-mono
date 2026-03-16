@@ -12,7 +12,14 @@ from ...models import AcademicProgram, Member
 from ...schemas import AlumniConnectRead, MemberCreate, MemberRead, MemberSelfProfileUpdate, MemberUpdate
 from ...services.audit_log import log_action
 from ...services.rbac import get_user_roles
-from ..deps import CHAPTER_ROLES, require_non_service_recovery, require_role, resolve_university_scope
+from ..deps import (
+    CHAPTER_ROLES,
+    apply_university_scope_filter,
+    require_non_service_recovery,
+    require_role,
+    resolve_university_scope,
+    resolve_visible_university_ids,
+)
 
 router = APIRouter(prefix="/members", tags=["members"])
 
@@ -211,14 +218,21 @@ def _member_by_id_or_404(db: Session, member_id: str) -> Member:
 @router.get("", response_model=list[MemberRead])
 def list_members(
     university_id: int | None = None,
+    conference_id: int | None = None,
+    union_id: int | None = None,
     db: Session = Depends(get_db),
     user=Depends(require_role(CHAPTER_ROLES)),
 ):
-    scoped_university_id = resolve_university_scope(user, university_id)
+    scoped_university_ids = resolve_visible_university_ids(
+        db,
+        user,
+        requested_university_id=university_id,
+        requested_conference_id=conference_id,
+        requested_union_id=union_id,
+    )
     visible_statuses, _ = _member_access_scope(db, user)
     query = db.query(Member).order_by(Member.created_at.desc())
-    if scoped_university_id:
-        query = query.filter(Member.university_id == scoped_university_id)
+    query = apply_university_scope_filter(query, Member, scoped_university_ids)
     if visible_statuses:
         query = query.filter(Member.status.in_(visible_statuses))
     return [_serialize(item) for item in query.all()]
@@ -227,18 +241,25 @@ def list_members(
 @router.get("/alumni-connect", response_model=list[AlumniConnectRead])
 def list_alumni_connect(
     university_id: int | None = None,
+    conference_id: int | None = None,
+    union_id: int | None = None,
     db: Session = Depends(get_db),
     user=Depends(require_non_service_recovery),
 ):
     _ensure_alumni_connect_access(db, user)
-    scoped_university_id = resolve_university_scope(user, university_id)
+    scoped_university_ids = resolve_visible_university_ids(
+        db,
+        user,
+        requested_university_id=university_id,
+        requested_conference_id=conference_id,
+        requested_union_id=union_id,
+    )
     query = (
         db.query(Member)
         .filter(Member.status == "Alumni")
         .order_by(Member.last_name.asc(), Member.first_name.asc(), Member.created_at.desc())
     )
-    if scoped_university_id:
-        query = query.filter(Member.university_id == scoped_university_id)
+    query = apply_university_scope_filter(query, Member, scoped_university_ids)
     return [_serialize_alumni_connect(item) for item in query.all()]
 
 
@@ -276,7 +297,7 @@ def create_member(
     db: Session = Depends(get_db),
     user=Depends(require_role(CHAPTER_ROLES)),
 ):
-    scoped_university_id = resolve_university_scope(user, payload.university_id)
+    scoped_university_id = resolve_university_scope(db, user, payload.university_id)
     _, writable_statuses = _member_access_scope(db, user)
     payload_data = payload.model_dump(exclude={"university_id"})
     payload_data["status"] = _normalize_member_status_for_user(payload.status, writable_statuses)
@@ -306,7 +327,7 @@ def update_member(
     member = _member_by_id_or_404(db, member_id)
 
     target_university_id = payload.university_id or member.university_id
-    scoped_university_id = resolve_university_scope(user, target_university_id)
+    scoped_university_id = resolve_university_scope(db, user, target_university_id)
     visible_statuses, writable_statuses = _member_access_scope(db, user)
     _ensure_member_visible(member.status, visible_statuses)
     _ensure_member_writable(member.status, writable_statuses)
@@ -338,7 +359,7 @@ def delete_member(
     user=Depends(require_role(CHAPTER_ROLES)),
 ):
     member = _member_by_id_or_404(db, member_id)
-    resolve_university_scope(user, member.university_id)
+    resolve_university_scope(db, user, member.university_id)
     visible_statuses, writable_statuses = _member_access_scope(db, user)
     _ensure_member_visible(member.status, visible_statuses)
     _ensure_member_writable(member.status, writable_statuses)
@@ -362,7 +383,7 @@ def bulk_upload(
 
     for row in reader:
         row_university_id = int(row.get("university_id") or 0)
-        scoped_university_id = resolve_university_scope(user, row_university_id)
+        scoped_university_id = resolve_university_scope(db, user, row_university_id)
         member = Member(
             member_id=row.get("member_id"),
             first_name=row.get("first_name") or "",

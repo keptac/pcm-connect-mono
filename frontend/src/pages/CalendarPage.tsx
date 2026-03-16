@@ -48,7 +48,7 @@ function statusTone(status?: string | null): "success" | "warning" | "danger" | 
 }
 
 export default function CalendarPage({ embedded = false }: { embedded?: boolean }) {
-  const { roles, scopedUniversityId } = useUniversityScope();
+  const { roles, scopeKey, scopeParams } = useUniversityScope();
   const canView = roles.some((role) => ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director", "alumni_admin"].includes(role));
 
   const [viewDate, setViewDate] = useState(() => new Date());
@@ -58,8 +58,8 @@ export default function CalendarPage({ embedded = false }: { embedded?: boolean 
   const gridEnd = useMemo(() => monthGridEnd(viewDate), [viewDate]);
 
   const { data: programs } = useQuery({
-    queryKey: ["programs", scopedUniversityId, "calendar"],
-    queryFn: () => programsApi.list(scopedUniversityId),
+    queryKey: ["programs", scopeKey, "calendar"],
+    queryFn: () => programsApi.list(scopeParams),
     enabled: canView
   });
 

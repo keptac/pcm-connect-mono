@@ -64,6 +64,7 @@ export function usePagination<T>(items: T[] | undefined, initialPageSize = TABLE
 export function PageHeader({
   eyebrow,
   title,
+  description,
   actions
 }: {
   eyebrow: string;
@@ -76,6 +77,7 @@ export function PageHeader({
       <div className="space-y-2">
         <p className="eyebrow">{eyebrow}</p>
         <h1 className="display-title">{title}</h1>
+        {description ? <p className="max-w-3xl text-sm text-slate-600">{description}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-3">{actions}</div> : null}
     </div>

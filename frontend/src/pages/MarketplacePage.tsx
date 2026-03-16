@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { marketplaceApi, membersApi, messagesApi, universitiesApi } from "../api/endpoints";
+import { UniversitySelectOptions } from "../components/UniversitySelectOptions";
 import { EmptyState, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
 import { formatDate } from "../lib/format";
 import { useAuthStore } from "../store/auth";
@@ -553,12 +554,7 @@ export default function MarketplacePage() {
                       onChange={(event) => setForm((current) => ({ ...current, university_id: event.target.value }))}
                       required
                     >
-                      <option value="">Select university or campus</option>
-                      {(universities || []).map((university: any) => (
-                        <option key={university.id} value={String(university.id)}>
-                          {university.name}
-                        </option>
-                      ))}
+                      <UniversitySelectOptions universities={universities} emptyOptionLabel="Select university or campus" />
                     </select>
                   </label>
                 ) : null}

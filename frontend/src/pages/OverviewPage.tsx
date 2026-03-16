@@ -4,30 +4,30 @@ import { useQuery } from "@tanstack/react-query";
 import { analyticsApi, programsApi } from "../api/endpoints";
 import { EmptyState, MetricCard, PageHeader, Panel, StatusBadge } from "../components/ui";
 import { formatCompactCurrency, formatCurrency, formatDate, formatNumber } from "../lib/format";
-import { useAuthStore } from "../store/auth";
+import { useUniversityScope } from "../lib/universityScope";
 
 export default function OverviewPage() {
-  const { activeUniversityId } = useAuthStore();
+  const { scopeKey, scopeParams } = useUniversityScope();
 
   const overviewQuery = useQuery({
-    queryKey: ["analytics-overview", activeUniversityId],
-    queryFn: () => analyticsApi.overview(activeUniversityId)
+    queryKey: ["analytics-overview", scopeKey],
+    queryFn: () => analyticsApi.overview(scopeParams)
   });
   const universitiesQuery = useQuery({
-    queryKey: ["analytics-universities", activeUniversityId],
-    queryFn: () => analyticsApi.universities(activeUniversityId)
+    queryKey: ["analytics-universities", scopeKey],
+    queryFn: () => analyticsApi.universities(scopeParams)
   });
   const programsQuery = useQuery({
-    queryKey: ["analytics-programs", activeUniversityId],
-    queryFn: () => analyticsApi.programs(activeUniversityId)
+    queryKey: ["analytics-programs", scopeKey],
+    queryFn: () => analyticsApi.programs(scopeParams)
   });
   const fundingQuery = useQuery({
-    queryKey: ["analytics-funding", activeUniversityId],
-    queryFn: () => analyticsApi.funding(activeUniversityId)
+    queryKey: ["analytics-funding", scopeKey],
+    queryFn: () => analyticsApi.funding(scopeParams)
   });
   const scheduledProgramsQuery = useQuery({
-    queryKey: ["programs", activeUniversityId, "overview-schedule"],
-    queryFn: () => programsApi.list(activeUniversityId)
+    queryKey: ["programs", scopeKey, "overview-schedule"],
+    queryFn: () => programsApi.list(scopeParams)
   });
 
   const overview = overviewQuery.data;

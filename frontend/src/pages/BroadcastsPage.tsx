@@ -2,6 +2,7 @@ import { type FormEvent, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { broadcastsApi, programsApi, universitiesApi } from "../api/endpoints";
+import { UniversitySelectOptions, groupUniversitiesByUnion } from "../components/UniversitySelectOptions";
 import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatDateTime, formatNumber } from "../lib/format";
@@ -46,7 +47,7 @@ function badgeTone(value?: string | null): "success" | "warning" | "danger" | "i
 
 export default function BroadcastsPage({ embedded = false }: { embedded?: boolean }) {
   const client = useQueryClient();
-  const { user, roles, canSelectUniversity, scopedUniversityId, defaultUniversityId } = useUniversityScope();
+  const { user, roles, canSelectUniversity, scopedUniversityId, defaultUniversityId, scopeKey, scopeParams } = useUniversityScope();
   const canView = roles.some((role) => ["super_admin", "student_admin", "secretary", "program_manager", "finance_officer", "students_finance", "committee_member", "executive", "director"].includes(role));
   const canManage = canView;
 
@@ -57,18 +58,18 @@ export default function BroadcastsPage({ embedded = false }: { embedded?: boolea
   const [statusFilter, setStatusFilter] = useState("all");
 
   const { data: broadcasts } = useQuery({
-    queryKey: ["broadcasts", scopedUniversityId],
-    queryFn: () => broadcastsApi.list({ universityId: scopedUniversityId }),
+    queryKey: ["broadcasts", scopeKey],
+    queryFn: () => broadcastsApi.list(scopeParams),
     enabled: canView
   });
   const { data: programs } = useQuery({
-    queryKey: ["programs", scopedUniversityId],
-    queryFn: () => programsApi.list(scopedUniversityId),
+    queryKey: ["programs", scopeKey],
+    queryFn: () => programsApi.list(scopeParams),
     enabled: canView
   });
   const { data: universities } = useQuery({
-    queryKey: ["universities"],
-    queryFn: universitiesApi.list,
+    queryKey: ["universities", scopeKey],
+    queryFn: () => universitiesApi.list(scopeParams),
     enabled: canView
   });
 
@@ -360,10 +361,7 @@ export default function BroadcastsPage({ embedded = false }: { embedded?: boolea
                     onChange={(event) => setForm({ ...form, university_id: event.target.value, program_id: "", invited_university_ids: [] })}
                     required
                   >
-                    <option value="">Select university or campus</option>
-                    {universities?.map((university: any) => (
-                      <option key={university.id} value={university.id}>{university.name}</option>
-                    ))}
+                    <UniversitySelectOptions universities={universities} emptyOptionLabel="Select university or campus" />
                   </select>
                 </label>
               ) : (
@@ -447,29 +445,34 @@ export default function BroadcastsPage({ embedded = false }: { embedded?: boolea
                   <p className="field-label">Invite universities</p>
                   <p className="mt-1 text-sm text-slate-500">Select the campuses you want to invite directly into this broadcast.</p>
                 </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  {universities
-                    ?.filter((university: any) => String(university.id) !== form.university_id)
-                    .map((university: any) => {
-                      const checked = form.invited_university_ids.includes(String(university.id));
-                      return (
-                        <label key={university.id} className="field-shell field-checkbox">
-                          <span className="text-sm font-medium text-slate-800">{university.name}</span>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(event) =>
-                              setForm({
-                                ...form,
-                                invited_university_ids: event.target.checked
-                                  ? [...form.invited_university_ids, String(university.id)]
-                                  : form.invited_university_ids.filter((value) => value !== String(university.id))
-                              })
-                            }
-                          />
-                        </label>
-                      );
-                    })}
+                <div className="space-y-4">
+                  {groupUniversitiesByUnion(universities, form.university_id ? [form.university_id] : []).map((group) => (
+                    <div key={group.key} className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{group.label}</p>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {group.items.map((university) => {
+                          const checked = form.invited_university_ids.includes(String(university.id));
+                          return (
+                            <label key={university.id} className="field-shell field-checkbox">
+                              <span className="text-sm font-medium text-slate-800">{university.name}</span>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(event) =>
+                                  setForm({
+                                    ...form,
+                                    invited_university_ids: event.target.checked
+                                      ? [...form.invited_university_ids, String(university.id)]
+                                      : form.invited_university_ids.filter((value) => value !== String(university.id))
+                                  })
+                                }
+                              />
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ) : null}

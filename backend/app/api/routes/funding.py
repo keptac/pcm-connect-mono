@@ -5,7 +5,14 @@ from ...db.session import get_db
 from ...models import FundingRecord, Program
 from ...schemas import FundingRecordCreate, FundingRecordPatch, FundingRecordRead
 from ...services.audit_log import log_action
-from ..deps import FUNDING_ROLES, FUNDING_WRITE_ROLES, require_role, resolve_university_scope
+from ..deps import (
+    FUNDING_ROLES,
+    FUNDING_WRITE_ROLES,
+    apply_university_scope_filter,
+    require_role,
+    resolve_university_scope,
+    resolve_visible_university_ids,
+)
 
 router = APIRouter(prefix="/funding", tags=["funding"])
 
@@ -91,15 +98,22 @@ def _serialize(record: FundingRecord) -> FundingRecordRead:
 @router.get("", response_model=list[FundingRecordRead])
 def list_funding(
     university_id: int | None = None,
+    conference_id: int | None = None,
+    union_id: int | None = None,
     flow_direction: str | None = None,
     receipt_category: str | None = None,
     db: Session = Depends(get_db),
     user=Depends(require_role(FUNDING_ROLES)),
 ):
-    scoped_university_id = resolve_university_scope(user, university_id)
+    scoped_university_ids = resolve_visible_university_ids(
+        db,
+        user,
+        requested_university_id=university_id,
+        requested_conference_id=conference_id,
+        requested_union_id=union_id,
+    )
     query = db.query(FundingRecord).order_by(FundingRecord.transaction_date.desc(), FundingRecord.id.desc())
-    if scoped_university_id:
-        query = query.filter(FundingRecord.university_id == scoped_university_id)
+    query = apply_university_scope_filter(query, FundingRecord, scoped_university_ids)
     if flow_direction:
         query = query.filter(FundingRecord.flow_direction == flow_direction)
     if receipt_category:
@@ -113,7 +127,7 @@ def create_funding_record(
     db: Session = Depends(get_db),
     user=Depends(require_role(FUNDING_WRITE_ROLES)),
 ):
-    scoped_university_id = resolve_university_scope(user, payload.university_id)
+    scoped_university_id = resolve_university_scope(db, user, payload.university_id)
     if scoped_university_id is None and payload.program_id:
         raise HTTPException(status_code=400, detail="HQ treasury records cannot be linked to a university program")
     if payload.program_id:
@@ -147,7 +161,7 @@ def update_funding_record(
 
     updated_data = payload.model_dump(exclude_unset=True)
     target_university_id = updated_data["university_id"] if "university_id" in updated_data else record.university_id
-    scoped_university_id = resolve_university_scope(user, target_university_id)
+    scoped_university_id = resolve_university_scope(db, user, target_university_id)
     target_program_id = updated_data["program_id"] if "program_id" in updated_data else record.program_id
     if scoped_university_id is None and target_program_id:
         raise HTTPException(status_code=400, detail="HQ treasury records cannot be linked to a university program")
@@ -192,7 +206,7 @@ def delete_funding_record(
     record = db.query(FundingRecord).filter(FundingRecord.id == record_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Funding record not found")
-    resolve_university_scope(user, record.university_id)
+    resolve_university_scope(db, user, record.university_id)
 
     db.delete(record)
     db.commit()

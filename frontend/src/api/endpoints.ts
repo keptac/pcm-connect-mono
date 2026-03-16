@@ -1,5 +1,11 @@
 import api from "./client";
 
+export type ScopeParams = {
+  universityId?: number | null;
+  conferenceId?: number | null;
+  unionId?: number | null;
+};
+
 function parseFilenameFromDisposition(value?: string | null) {
   if (!value) return null;
   const utfMatch = value.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
@@ -8,11 +14,21 @@ function parseFilenameFromDisposition(value?: string | null) {
   return basicMatch?.[1] || null;
 }
 
-function scopedParams(universityId?: number | null, extra?: Record<string, unknown>) {
+function normalizeScope(scope?: number | ScopeParams | null): ScopeParams {
+  if (typeof scope === "number") {
+    return { universityId: scope };
+  }
+  return scope || {};
+}
+
+function scopedParams(scope?: number | ScopeParams | null, extra?: Record<string, unknown>) {
+  const { universityId, conferenceId, unionId } = normalizeScope(scope);
   return {
     params: Object.fromEntries(
       Object.entries({
         university_id: universityId || undefined,
+        conference_id: conferenceId || undefined,
+        union_id: unionId || undefined,
         ...extra
       }).filter(([, value]) => value !== undefined && value !== null && value !== "")
     )
@@ -32,10 +48,17 @@ export const usersMeApi = {
 };
 
 export const universitiesApi = {
-  list: () => api.get("/universities").then((res) => res.data),
+  list: (scope?: number | ScopeParams | null) => api.get("/universities", scopedParams(scope)).then((res) => res.data),
   listPublic: () => api.get("/universities/public").then((res) => res.data),
   create: (payload: any) => api.post("/universities", payload).then((res) => res.data),
-  update: (id: number, payload: any) => api.patch(`/universities/${id}`, payload).then((res) => res.data)
+  update: (id: number, payload: any) => api.patch(`/universities/${id}`, payload).then((res) => res.data),
+  delete: (id: number) => api.delete(`/universities/${id}`).then((res) => res.data)
+};
+
+export const unionsApi = {
+  list: (activeOnly = false) => api.get("/unions", { params: activeOnly ? { active_only: true } : {} }).then((res) => res.data),
+  create: (payload: any) => api.post("/unions", payload).then((res) => res.data),
+  update: (id: number, payload: any) => api.patch(`/unions/${id}`, payload).then((res) => res.data)
 };
 
 export const conferencesApi = {
@@ -45,26 +68,26 @@ export const conferencesApi = {
 };
 
 export const programsApi = {
-  list: (universityId?: number | null) => api.get("/programs", scopedParams(universityId)).then((res) => res.data),
+  list: (scope?: number | ScopeParams | null) => api.get("/programs", scopedParams(scope)).then((res) => res.data),
   create: (payload: any) => api.post("/programs", payload).then((res) => res.data),
   update: (id: number, payload: any) => api.patch(`/programs/${id}`, payload).then((res) => res.data),
   delete: (id: number) => api.delete(`/programs/${id}`).then((res) => res.data)
 };
 
 export const academicProgramsApi = {
-  list: (universityId?: number | null) => api.get("/academic-programs", scopedParams(universityId)).then((res) => res.data)
+  list: (scope?: number | ScopeParams | null) => api.get("/academic-programs", scopedParams(scope)).then((res) => res.data)
 };
 
 export const usersApi = {
-  list: () => api.get("/users").then((res) => res.data),
+  list: (scope?: number | ScopeParams | null) => api.get("/users", scopedParams(scope)).then((res) => res.data),
   create: (payload: any) => api.post("/users", payload).then((res) => res.data),
   update: (id: number, payload: any) => api.patch(`/users/${id}`, payload).then((res) => res.data),
   recoverPassword: (id: number, payload: any) => api.post(`/users/${id}/recover-password`, payload).then((res) => res.data)
 };
 
 export const membersApi = {
-  list: (universityId?: number | null) => api.get("/members", scopedParams(universityId)).then((res) => res.data),
-  alumniConnect: (universityId?: number | null) => api.get("/members/alumni-connect", scopedParams(universityId)).then((res) => res.data),
+  list: (scope?: number | ScopeParams | null) => api.get("/members", scopedParams(scope)).then((res) => res.data),
+  alumniConnect: (scope?: number | ScopeParams | null) => api.get("/members/alumni-connect", scopedParams(scope)).then((res) => res.data),
   myProfile: () => api.get("/members/me-profile").then((res) => res.data),
   updateMyProfile: (payload: any) => api.patch("/members/me-profile", payload).then((res) => res.data),
   create: (payload: any) => api.post("/members", payload).then((res) => res.data),
@@ -80,10 +103,10 @@ export const membersApi = {
 };
 
 export const eventsApi = {
-  list: (options?: { universityId?: number | null; programId?: number | null; startFrom?: string | null; endTo?: string | null }) =>
+  list: (options?: { universityId?: number | null; conferenceId?: number | null; unionId?: number | null; programId?: number | null; startFrom?: string | null; endTo?: string | null }) =>
     api.get(
       "/events",
-      scopedParams(options?.universityId, {
+      scopedParams({ universityId: options?.universityId, conferenceId: options?.conferenceId, unionId: options?.unionId }, {
         program_id: options?.programId,
         start_from: options?.startFrom,
         end_to: options?.endTo
@@ -95,8 +118,8 @@ export const eventsApi = {
 };
 
 export const broadcastsApi = {
-  list: (options?: { universityId?: number | null; programId?: number | null }) =>
-    api.get("/broadcasts", scopedParams(options?.universityId, { program_id: options?.programId })).then((res) => res.data),
+  list: (options?: { universityId?: number | null; conferenceId?: number | null; unionId?: number | null; programId?: number | null }) =>
+    api.get("/broadcasts", scopedParams({ universityId: options?.universityId, conferenceId: options?.conferenceId, unionId: options?.unionId }, { program_id: options?.programId })).then((res) => res.data),
   create: (payload: any) => api.post("/broadcasts", payload).then((res) => res.data),
   update: (id: number, payload: any) => api.patch(`/broadcasts/${id}`, payload).then((res) => res.data),
   respond: (id: number, payload: any) => api.post(`/broadcasts/${id}/respond`, payload).then((res) => res.data),
@@ -104,10 +127,10 @@ export const broadcastsApi = {
 };
 
 export const programUpdatesApi = {
-  list: (options?: { universityId?: number | null; programId?: number | null; reportingPeriod?: string | null }) =>
-    api.get("/program-updates", scopedParams(options?.universityId, { program_id: options?.programId, reporting_period: options?.reportingPeriod })).then((res) => res.data),
-  condensed: (options?: { universityId?: number | null; reportingPeriod?: string | null }) =>
-    api.get("/program-updates/condensed", scopedParams(options?.universityId, { reporting_period: options?.reportingPeriod })).then((res) => res.data),
+  list: (options?: { universityId?: number | null; conferenceId?: number | null; unionId?: number | null; programId?: number | null; reportingPeriod?: string | null }) =>
+    api.get("/program-updates", scopedParams({ universityId: options?.universityId, conferenceId: options?.conferenceId, unionId: options?.unionId }, { program_id: options?.programId, reporting_period: options?.reportingPeriod })).then((res) => res.data),
+  condensed: (options?: { universityId?: number | null; conferenceId?: number | null; unionId?: number | null; reportingPeriod?: string | null }) =>
+    api.get("/program-updates/condensed", scopedParams({ universityId: options?.universityId, conferenceId: options?.conferenceId, unionId: options?.unionId }, { reporting_period: options?.reportingPeriod })).then((res) => res.data),
   create: (payload: any) =>
     api.post("/program-updates", payload, payload instanceof FormData ? {
       headers: { "Content-Type": "multipart/form-data" }
@@ -124,11 +147,13 @@ export const programUpdatesApi = {
       blob: res.data,
       filename: parseFilenameFromDisposition(res.headers["content-disposition"])
     })),
-  downloadReportPack: (options?: { universityId?: number | null; programId?: number | null; reportingPeriod?: string | null }) =>
+  downloadReportPack: (options?: { universityId?: number | null; conferenceId?: number | null; unionId?: number | null; programId?: number | null; reportingPeriod?: string | null }) =>
     api.get("/program-updates/report-pack", {
       params: Object.fromEntries(
         Object.entries({
           university_id: options?.universityId || undefined,
+          conference_id: options?.conferenceId || undefined,
+          union_id: options?.unionId || undefined,
           program_id: options?.programId,
           reporting_period: options?.reportingPeriod || undefined,
         }).filter(([, value]) => value !== undefined && value !== null && value !== "")
@@ -138,11 +163,13 @@ export const programUpdatesApi = {
       blob: res.data,
       filename: parseFilenameFromDisposition(res.headers["content-disposition"])
     })),
-  downloadConsolidatedReport: (options?: { universityId?: number | null; programId?: number | null; reportingPeriod?: string | null }) =>
+  downloadConsolidatedReport: (options?: { universityId?: number | null; conferenceId?: number | null; unionId?: number | null; programId?: number | null; reportingPeriod?: string | null }) =>
     api.get("/program-updates/consolidated-report-pdf", {
       params: Object.fromEntries(
         Object.entries({
           university_id: options?.universityId || undefined,
+          conference_id: options?.conferenceId || undefined,
+          union_id: options?.unionId || undefined,
           program_id: options?.programId,
           reporting_period: options?.reportingPeriod || undefined,
         }).filter(([, value]) => value !== undefined && value !== null && value !== "")
@@ -180,14 +207,14 @@ export const reportingPeriodsApi = {
 };
 
 export const fundingApi = {
-  list: (universityId?: number | null) => api.get("/funding", scopedParams(universityId)).then((res) => res.data),
+  list: (scope?: number | ScopeParams | null) => api.get("/funding", scopedParams(scope)).then((res) => res.data),
   create: (payload: any) => api.post("/funding", payload).then((res) => res.data),
   update: (id: number, payload: any) => api.patch(`/funding/${id}`, payload).then((res) => res.data),
   delete: (id: number) => api.delete(`/funding/${id}`).then((res) => res.data)
 };
 
 export const reportsApi = {
-  list: (universityId?: number | null) => api.get("/reports", scopedParams(universityId)).then((res) => res.data),
+  list: (scope?: number | ScopeParams | null) => api.get("/reports", scopedParams(scope)).then((res) => res.data),
   submitForm: (form: FormData) =>
     api.post("/reports/submit-form", form, {
       headers: { "Content-Type": "multipart/form-data" }
@@ -218,15 +245,15 @@ export const marketplaceApi = {
 };
 
 export const analyticsApi = {
-  overview: (universityId?: number | null) => api.get("/analytics/overview", scopedParams(universityId)).then((res) => res.data),
-  people: (groupBy: string, universityId?: number | null) =>
-    api.get("/analytics/people", scopedParams(universityId, { group_by: groupBy })).then((res) => res.data),
-  universities: (universityId?: number | null) =>
-    api.get("/analytics/universities", scopedParams(universityId)).then((res) => res.data),
-  programs: (universityId?: number | null) =>
-    api.get("/analytics/programs", scopedParams(universityId)).then((res) => res.data),
-  funding: (universityId?: number | null) =>
-    api.get("/analytics/funding", scopedParams(universityId)).then((res) => res.data)
+  overview: (scope?: number | ScopeParams | null) => api.get("/analytics/overview", scopedParams(scope)).then((res) => res.data),
+  people: (groupBy: string, scope?: number | ScopeParams | null) =>
+    api.get("/analytics/people", scopedParams(scope, { group_by: groupBy })).then((res) => res.data),
+  universities: (scope?: number | ScopeParams | null) =>
+    api.get("/analytics/universities", scopedParams(scope)).then((res) => res.data),
+  programs: (scope?: number | ScopeParams | null) =>
+    api.get("/analytics/programs", scopedParams(scope)).then((res) => res.data),
+  funding: (scope?: number | ScopeParams | null) =>
+    api.get("/analytics/funding", scopedParams(scope)).then((res) => res.data)
 };
 
 export const adminApi = {

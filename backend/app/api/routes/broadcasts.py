@@ -13,7 +13,7 @@ from ...schemas import (
     ProgramBroadcastUpdate,
 )
 from ...services.audit_log import log_action
-from ..deps import CHAPTER_ROLES, require_non_service_recovery, require_role, resolve_university_scope
+from ..deps import CHAPTER_ROLES, require_non_service_recovery, require_role, resolve_university_scope, resolve_visible_university_ids
 
 router = APIRouter(prefix="/broadcasts", tags=["broadcasts"])
 
@@ -25,7 +25,7 @@ def _validate_broadcast_window(starts_at: datetime | None, ends_at: datetime | N
 
 def _serialize(
     broadcast: ProgramBroadcast,
-    viewer_university_id: int | None = None,
+    viewer_university_ids: set[int] | None = None,
 ) -> ProgramBroadcastRead:
     invites = [
         BroadcastInviteRead(
@@ -40,14 +40,17 @@ def _serialize(
     ]
 
     my_invite_status = None
-    if viewer_university_id:
-        if broadcast.university_id == viewer_university_id:
+    if viewer_university_ids:
+        if broadcast.university_id in viewer_university_ids:
             my_invite_status = "host"
         else:
+            scope_statuses = []
             for invite in invites:
-                if invite.university_id == viewer_university_id:
-                    my_invite_status = invite.status
-                    break
+                if invite.university_id in viewer_university_ids:
+                    scope_statuses.append(invite.status)
+            if scope_statuses:
+                unique_statuses = sorted(set(scope_statuses))
+                my_invite_status = unique_statuses[0] if len(unique_statuses) == 1 else "mixed"
             if not my_invite_status and (broadcast.visibility or "network") == "network":
                 my_invite_status = "open"
 
@@ -97,30 +100,40 @@ def _replace_invites(db: Session, broadcast: ProgramBroadcast, invited_universit
         )
 
 
-def _is_visible_to_university(broadcast: ProgramBroadcast, university_id: int) -> bool:
-    if broadcast.university_id == university_id:
+def _is_visible_to_scope(broadcast: ProgramBroadcast, university_ids: set[int]) -> bool:
+    if not university_ids:
+        return False
+    if broadcast.university_id in university_ids:
         return True
     if (broadcast.visibility or "network") == "network":
         return True
-    return any(invite.university_id == university_id for invite in broadcast.invites)
+    return any(invite.university_id in university_ids for invite in broadcast.invites)
 
 
 @router.get("", response_model=list[ProgramBroadcastRead])
 def list_broadcasts(
     university_id: int | None = None,
+    conference_id: int | None = None,
+    union_id: int | None = None,
     program_id: int | None = None,
     db: Session = Depends(get_db),
     user=Depends(require_non_service_recovery),
 ):
-    viewer_university_id = resolve_university_scope(user, university_id)
+    viewer_university_ids = resolve_visible_university_ids(
+        db,
+        user,
+        requested_university_id=university_id,
+        requested_conference_id=conference_id,
+        requested_union_id=union_id,
+    )
     query = db.query(ProgramBroadcast).order_by(ProgramBroadcast.created_at.desc(), ProgramBroadcast.id.desc())
     if program_id:
         query = query.filter(ProgramBroadcast.program_id == program_id)
 
     items = query.all()
-    if viewer_university_id:
-        items = [item for item in items if _is_visible_to_university(item, viewer_university_id)]
-    return [_serialize(item, viewer_university_id) for item in items]
+    if viewer_university_ids is not None:
+        items = [item for item in items if _is_visible_to_scope(item, viewer_university_ids)]
+    return [_serialize(item, viewer_university_ids) for item in items]
 
 
 @router.post("", response_model=ProgramBroadcastRead)
@@ -129,7 +142,7 @@ def create_broadcast(
     db: Session = Depends(get_db),
     user=Depends(require_role(CHAPTER_ROLES)),
 ):
-    scoped_university_id = resolve_university_scope(user, payload.university_id)
+    scoped_university_id = resolve_university_scope(db, user, payload.university_id)
     _validate_program_scope(db, payload.program_id, scoped_university_id)
     _validate_broadcast_window(payload.starts_at, payload.ends_at)
 
@@ -147,7 +160,7 @@ def create_broadcast(
     db.commit()
     db.refresh(broadcast)
     log_action(db, user.id, "create", "broadcast", str(broadcast.id), {"title": broadcast.title})
-    return _serialize(broadcast, user.university_id or scoped_university_id)
+    return _serialize(broadcast, {scoped_university_id})
 
 
 @router.patch("/{broadcast_id}", response_model=ProgramBroadcastRead)
@@ -161,7 +174,7 @@ def update_broadcast(
     if not broadcast:
         raise HTTPException(status_code=404, detail="Broadcast not found")
 
-    scoped_university_id = resolve_university_scope(user, payload.university_id or broadcast.university_id)
+    scoped_university_id = resolve_university_scope(db, user, payload.university_id or broadcast.university_id)
     _validate_program_scope(db, payload.program_id or broadcast.program_id, scoped_university_id)
     _validate_broadcast_window(payload.starts_at or broadcast.starts_at, payload.ends_at or broadcast.ends_at)
 
@@ -178,7 +191,7 @@ def update_broadcast(
     db.commit()
     db.refresh(broadcast)
     log_action(db, user.id, "update", "broadcast", str(broadcast.id), {"title": broadcast.title})
-    return _serialize(broadcast, user.university_id or scoped_university_id)
+    return _serialize(broadcast, {scoped_university_id})
 
 
 @router.post("/{broadcast_id}/respond", response_model=ProgramBroadcastRead)
@@ -194,7 +207,7 @@ def respond_to_broadcast(
     broadcast = db.query(ProgramBroadcast).filter(ProgramBroadcast.id == broadcast_id).first()
     if not broadcast:
         raise HTTPException(status_code=404, detail="Broadcast not found")
-    if not _is_visible_to_university(broadcast, user.university_id):
+    if not _is_visible_to_scope(broadcast, {user.university_id}):
         raise HTTPException(status_code=403, detail="Broadcast is not visible to your university")
 
     invite = (
@@ -216,7 +229,7 @@ def respond_to_broadcast(
     db.commit()
     db.refresh(broadcast)
     log_action(db, user.id, "respond", "broadcast", str(broadcast.id), {"status": payload.status})
-    return _serialize(broadcast, user.university_id)
+    return _serialize(broadcast, {user.university_id})
 
 
 @router.delete("/{broadcast_id}")
@@ -228,7 +241,7 @@ def delete_broadcast(
     broadcast = db.query(ProgramBroadcast).filter(ProgramBroadcast.id == broadcast_id).first()
     if not broadcast:
         raise HTTPException(status_code=404, detail="Broadcast not found")
-    resolve_university_scope(user, broadcast.university_id)
+    resolve_university_scope(db, user, broadcast.university_id)
 
     db.delete(broadcast)
     db.commit()

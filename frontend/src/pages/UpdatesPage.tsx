@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { mandatoryProgramsApi, programUpdatesApi, reportingPeriodsApi, universitiesApi } from "../api/endpoints";
+import { UniversitySelectOptions } from "../components/UniversitySelectOptions";
 import { EmptyState, MetricCard, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatCurrency, formatDate, formatNumber } from "../lib/format";
@@ -87,17 +88,17 @@ function isMeetingEventName(eventName?: string | null) {
 
 export default function UpdatesPage() {
   const client = useQueryClient();
-  const { roles, canSelectUniversity, scopedUniversityId, defaultUniversityId } = useUniversityScope();
+  const { roles, canSelectUniversity, scopedUniversityId, defaultUniversityId, scopeKey, scopeParams } = useUniversityScope();
   const canView = roles.some((role) => ["super_admin", "student_admin", "secretary", "program_manager", "committee_member", "executive", "director", "alumni_admin"].includes(role));
 
   const { data: updates } = useQuery({
-    queryKey: ["program-updates", scopedUniversityId],
-    queryFn: () => programUpdatesApi.list({ universityId: scopedUniversityId }),
+    queryKey: ["program-updates", scopeKey],
+    queryFn: () => programUpdatesApi.list(scopeParams),
     enabled: canView
   });
   const { data: universities } = useQuery({
-    queryKey: ["universities"],
-    queryFn: universitiesApi.list,
+    queryKey: ["universities", scopeKey],
+    queryFn: () => universitiesApi.list(scopeParams),
     enabled: canView
   });
   const { data: mandatoryEvents } = useQuery({
@@ -188,7 +189,7 @@ export default function UpdatesPage() {
     setIsDownloadingPack(true);
     try {
       const response = await programUpdatesApi.downloadReportPack({
-        universityId: scopedUniversityId,
+        ...scopeParams,
         reportingPeriod: periodFilter === "all" ? undefined : periodFilter
       });
       const downloadUrl = window.URL.createObjectURL(response.blob);
@@ -209,7 +210,7 @@ export default function UpdatesPage() {
     setIsDownloadingConsolidated(true);
     try {
       const response = await programUpdatesApi.downloadConsolidatedReport({
-        universityId: scopedUniversityId,
+        ...scopeParams,
         reportingPeriod: periodFilter === "all" ? undefined : periodFilter
       });
       const downloadUrl = window.URL.createObjectURL(response.blob);
@@ -577,10 +578,11 @@ export default function UpdatesPage() {
                   <label className="field-shell">
                     <span className="field-label">University / campus</span>
                     <select className="field-input" value={form.university_id} onChange={(event) => setForm({ ...form, university_id: event.target.value })}>
-                      <option value="">Select university or campus</option>
-                      {orderedUniversities.map((university: any) => (
-                        <option key={university.id} value={university.id}>{university.name}</option>
-                      ))}
+                      <UniversitySelectOptions
+                        universities={orderedUniversities}
+                        emptyOptionLabel="Select university or campus"
+                        preserveGroupOrder
+                      />
                     </select>
                   </label>
                 ) : (

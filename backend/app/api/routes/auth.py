@@ -30,12 +30,18 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def _serialize_user(db: Session, user: User) -> UserRead:
     roles = get_user_roles(db, user)
     tenure_exempt = has_tenure_exemption(roles)
+    conference = user.conference or (user.university.conference if user.university and user.university.conference else None)
+    union = user.union or (conference.union if conference and conference.union else None)
     return UserRead(
         id=user.id,
         email=user.email,
         name=user.name,
         university_id=user.university_id,
         university_name=user.university.name if user.university else None,
+        conference_id=conference.id if conference else None,
+        conference_name=conference.name if conference else None,
+        union_id=union.id if union else None,
+        union_name=union.name if union else None,
         member_id=str(user.member.id) if user.member else None,
         member_number=user.member.member_id if user.member else None,
         member_status=user.member.status if user.member else None,
@@ -211,6 +217,8 @@ def register_general_user(
         name=" ".join(part for part in [member.first_name, member.last_name] if part).strip() or member.email,
         password_hash=hash_password(payload.password),
         university_id=None,
+        conference_id=None,
+        union_id=None,
         member_id=member.id,
         donor_interest=payload.donor_interest,
         subject_to_tenure=False,

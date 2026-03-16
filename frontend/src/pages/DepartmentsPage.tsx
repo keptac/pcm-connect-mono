@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { departmentsApi, universitiesApi } from "../api/endpoints";
+import { UniversitySelectOptions } from "../components/UniversitySelectOptions";
 import { useAuthStore } from "../store/auth";
 
 export default function DepartmentsPage() {
@@ -32,10 +33,7 @@ export default function DepartmentsPage() {
           >
             <input className="border rounded-xl p-2" placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             <select className="border rounded-xl p-2" value={form.university_id} onChange={(e) => setForm({ ...form, university_id: e.target.value })}>
-              <option value="">University</option>
-              {universities?.map((uni: any) => (
-                <option key={uni.id} value={uni.id}>{uni.name}</option>
-              ))}
+              <UniversitySelectOptions universities={universities} emptyOptionLabel="University" />
             </select>
             <button className="btn-primary">Create</button>
           </form>

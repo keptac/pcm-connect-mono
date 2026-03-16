@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from ...db.session import get_db
 from ...models import ParsedReportRow, UploadedReport
 from ...schemas import UploadReportResponse, UploadedReportRead, ParsedRowRead
-from ..deps import require_role, resolve_university_scope
+from ..deps import apply_university_scope_filter, require_role, resolve_university_scope, resolve_visible_university_ids
 from ...core.config import settings
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -43,7 +43,7 @@ def submit_form_report(
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid programs JSON")
 
-    scoped_university_id = resolve_university_scope(user, university_id)
+    scoped_university_id = resolve_university_scope(db, user, university_id)
 
     # Save optional attachment (cover image, etc.)
     stored_images: list[str] = []
@@ -101,13 +101,20 @@ def submit_form_report(
 @router.get("", response_model=list[UploadedReportRead])
 def list_reports(
     university_id: int | None = None,
+    conference_id: int | None = None,
+    union_id: int | None = None,
     db: Session = Depends(get_db),
     user=Depends(require_role(["super_admin", "student_admin", "secretary"])),
 ):
-    scoped_university_id = resolve_university_scope(user, university_id)
+    scoped_university_ids = resolve_visible_university_ids(
+        db,
+        user,
+        requested_university_id=university_id,
+        requested_conference_id=conference_id,
+        requested_union_id=union_id,
+    )
     query = db.query(UploadedReport).order_by(UploadedReport.uploaded_at.desc(), UploadedReport.id.desc())
-    if scoped_university_id:
-        query = query.filter(UploadedReport.university_id == scoped_university_id)
+    query = apply_university_scope_filter(query, UploadedReport, scoped_university_ids)
     return query.all()
 
 
@@ -116,9 +123,7 @@ def report_rows(report_id: int, db: Session = Depends(get_db), user=Depends(requ
     report = db.query(UploadedReport).filter(UploadedReport.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    if user.university_id and report.university_id != user.university_id:
-        raise HTTPException(status_code=403, detail="Invalid university scope")
-    resolve_university_scope(user, report.university_id)
+    resolve_university_scope(db, user, report.university_id)
     rows = []
     for row in report.rows:
         rows.append(ParsedRowRead(

@@ -7,6 +7,10 @@ type User = {
   roles: string[];
   university_id?: number | null;
   university_name?: string | null;
+  conference_id?: number | null;
+  conference_name?: string | null;
+  union_id?: number | null;
+  union_name?: string | null;
   member_id?: string | null;
   member_number?: string | null;
   member_status?: string | null;
@@ -27,16 +31,72 @@ type User = {
 type AuthState = {
   user: User | null;
   activeUniversityId: number | null;
+  activeConferenceId: number | null;
+  activeUnionId: number | null;
   setUser: (user: User | null) => void;
   setActiveUniversityId: (id: number | null) => void;
+  setActiveConferenceId: (id: number | null) => void;
+  setActiveUnionId: (id: number | null) => void;
 };
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   activeUniversityId: null,
-  setUser: (user) => set((state) => ({
-    user,
-    activeUniversityId: user?.university_id ?? (user ? state.activeUniversityId : null)
+  activeConferenceId: null,
+  activeUnionId: null,
+  setUser: (user) => set((state) => {
+    if (!user) {
+      return {
+        user: null,
+        activeUniversityId: null,
+        activeConferenceId: null,
+        activeUnionId: null,
+      };
+    }
+    if (user.university_id) {
+      return {
+        user,
+        activeUniversityId: user.university_id,
+        activeConferenceId: null,
+        activeUnionId: null,
+      };
+    }
+    if (user.conference_id) {
+      return {
+        user,
+        activeUniversityId: null,
+        activeConferenceId: user.conference_id,
+        activeUnionId: null,
+      };
+    }
+    if (user.union_id) {
+      return {
+        user,
+        activeUniversityId: null,
+        activeConferenceId: null,
+        activeUnionId: user.union_id,
+      };
+    }
+    return {
+      user,
+      activeUniversityId: state.activeUniversityId,
+      activeConferenceId: state.activeConferenceId,
+      activeUnionId: state.activeUnionId,
+    };
+  }),
+  setActiveUniversityId: (id) => set((state) => ({
+    activeUniversityId: state.user?.university_id ?? id,
+    activeConferenceId: state.user?.university_id ? null : (state.user?.conference_id ?? state.activeConferenceId),
+    activeUnionId: state.user?.university_id ? null : (state.user?.union_id ?? (id ? null : state.activeUnionId)),
   })),
-  setActiveUniversityId: (id) => set((state) => ({ activeUniversityId: state.user?.university_id ?? id }))
+  setActiveConferenceId: (id) => set((state) => ({
+    activeUniversityId: state.user?.university_id ?? null,
+    activeConferenceId: state.user?.university_id ? null : (state.user?.conference_id ?? id),
+    activeUnionId: state.user?.university_id || state.user?.conference_id ? null : (state.user?.union_id ?? null),
+  })),
+  setActiveUnionId: (id) => set((state) => ({
+    activeUniversityId: state.user?.university_id ?? null,
+    activeConferenceId: state.user?.university_id || state.user?.conference_id ? null : null,
+    activeUnionId: state.user?.university_id || state.user?.conference_id ? null : (state.user?.union_id ?? id),
+  }))
 }));

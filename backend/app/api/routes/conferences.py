@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ...db.session import get_db
-from ...models import Conference
+from ...models import Conference, Union
 from ...schemas import ConferenceCreate, ConferenceRead, ConferenceUpdate
 from ...services.audit_log import log_action
 from ..deps import ADMIN_ROLES, CHAPTER_ROLES, require_role
@@ -14,7 +14,8 @@ def _serialize(conference: Conference) -> ConferenceRead:
     return ConferenceRead(
         id=conference.id,
         name=conference.name,
-        union_name=conference.union_name,
+        union_id=conference.union_id,
+        union_name=conference.union.name if conference.union else conference.union_name,
         is_active=conference.is_active,
         campus_count=len(conference.universities),
         created_at=conference.created_at,
@@ -41,8 +42,17 @@ def create_conference(
 ):
     if db.query(Conference).filter(Conference.name == payload.name).first():
         raise HTTPException(status_code=400, detail="Conference already exists")
+    if payload.union_id is None:
+        raise HTTPException(status_code=400, detail="Union is required")
 
-    conference = Conference(**payload.model_dump())
+    union = db.query(Union).filter(Union.id == payload.union_id).first()
+    if not union:
+        raise HTTPException(status_code=400, detail="Union not found")
+
+    conference = Conference(
+        **payload.model_dump(),
+        union_name=union.name,
+    )
     db.add(conference)
     db.commit()
     db.refresh(conference)
@@ -65,7 +75,13 @@ def update_conference(
         if db.query(Conference).filter(Conference.name == payload.name).first():
             raise HTTPException(status_code=400, detail="Conference already exists")
 
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    if "union_id" in updates:
+        union = db.query(Union).filter(Union.id == updates["union_id"]).first()
+        if not union:
+            raise HTTPException(status_code=400, detail="Union not found")
+        conference.union_name = union.name
+    for key, value in updates.items():
         setattr(conference, key, value)
     db.commit()
     db.refresh(conference)

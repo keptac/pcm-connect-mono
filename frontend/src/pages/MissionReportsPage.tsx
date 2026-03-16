@@ -9,7 +9,7 @@ import { useUniversityScope } from "../lib/universityScope";
 const missionReportRoles = ["general_user"];
 
 export default function MissionReportsPage() {
-  const { roles, scopedUniversityId } = useUniversityScope();
+  const { roles, scopeKey, scopeParams } = useUniversityScope();
   const canView = roles.some((role) => missionReportRoles.includes(role));
   const [periodFilter, setPeriodFilter] = useState("all");
 
@@ -19,9 +19,9 @@ export default function MissionReportsPage() {
     enabled: canView
   });
   const { data: reports } = useQuery({
-    queryKey: ["condensed-mission-reports", scopedUniversityId, periodFilter],
+    queryKey: ["condensed-mission-reports", scopeKey, periodFilter],
     queryFn: () => programUpdatesApi.condensed({
-      universityId: scopedUniversityId,
+      ...scopeParams,
       reportingPeriod: periodFilter === "all" ? undefined : periodFilter
     }),
     enabled: canView

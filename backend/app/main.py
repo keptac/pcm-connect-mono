@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from .api.routes import academic_programs, admin, analytics, auth, broadcasts, conferences, events, funding, mandatory_programs, marketplace, members, messages, program_updates, programs, reporting_periods, reports, universities, users
+from .api.routes import academic_programs, admin, analytics, auth, broadcasts, conferences, events, funding, mandatory_programs, marketplace, members, messages, program_updates, programs, reporting_periods, reports, unions, universities, users
 from .core.config import settings
 from .startup import init as init_data
 
@@ -23,6 +23,7 @@ app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads"
 
 app.include_router(auth.router)
 app.include_router(universities.router)
+app.include_router(unions.router)
 app.include_router(conferences.router)
 app.include_router(programs.router)
 app.include_router(academic_programs.router)

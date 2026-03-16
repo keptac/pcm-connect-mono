@@ -6,6 +6,7 @@ import { conferencesApi, universitiesApi } from "../api/endpoints";
 import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatNumber } from "../lib/format";
+import { useUniversityScope } from "../lib/universityScope";
 import { useAuthStore } from "../store/auth";
 
 const initialForm = {
@@ -25,13 +26,14 @@ const initialForm = {
 export default function UniversitiesPage() {
   const client = useQueryClient();
   const { user } = useAuthStore();
+  const { scopeKey, scopeParams } = useUniversityScope();
   const roles = user?.roles || [];
   const canView = roles.includes("super_admin");
   const canCreate = roles.includes("super_admin");
 
   const { data: universities } = useQuery({
-    queryKey: ["universities"],
-    queryFn: universitiesApi.list,
+    queryKey: ["universities", scopeKey],
+    queryFn: () => universitiesApi.list(scopeParams),
     enabled: canView
   });
   const { data: conferences } = useQuery({
@@ -161,6 +163,17 @@ export default function UniversitiesPage() {
                       <td>
                         <div className="table-actions">
                           <TableActionButton label="Edit campus" tone="edit" onClick={() => hydrateForm(university)} />
+                          {canCreate ? (
+                            <TableActionButton
+                              label="Delete campus"
+                              tone="delete"
+                              onClick={async () => {
+                                if (!window.confirm(`Delete ${university.name}? This cannot be undone.`)) return;
+                                await universitiesApi.delete(university.id);
+                                await client.invalidateQueries({ queryKey: ["universities"] });
+                              }}
+                            />
+                          ) : null}
                         </div>
                       </td>
                     </tr>

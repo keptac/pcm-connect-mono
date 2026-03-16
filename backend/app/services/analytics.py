@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import datetime
 
-from sqlalchemy import or_
+from sqlalchemy import false, or_
 from sqlalchemy.orm import Session
 
 from ..models import FundingRecord, Member, Program, ProgramUpdate, University
@@ -30,28 +30,35 @@ def _funding_category(record: FundingRecord) -> str:
     return "Other"
 
 
-def _scoped_query(query, model, university_id: int | None):
-    if not university_id:
+def _scoped_query(query, model, university_ids: set[int] | None):
+    if university_ids is None:
         return query
-    return query.filter(model.university_id == university_id)
+    if not university_ids:
+        return query.filter(false())
+    return query.filter(model.university_id.in_(sorted(university_ids)))
 
 
-def _scoped_program_query(db: Session, university_id: int | None):
+def _scoped_program_query(db: Session, university_ids: set[int] | None):
     query = db.query(Program)
-    if university_id:
-        query = query.filter(or_(Program.university_id == university_id, Program.university_id.is_(None)))
+    if university_ids is not None:
+        if not university_ids:
+            return query.filter(Program.university_id.is_(None))
+        query = query.filter(or_(Program.university_id.in_(sorted(university_ids)), Program.university_id.is_(None)))
     return query
 
 
-def dashboard_overview(db: Session, university_id: int | None = None):
+def dashboard_overview(db: Session, university_ids: set[int] | None = None):
     universities_query = db.query(University).filter(University.is_active.is_(True))
-    if university_id:
-        universities_query = universities_query.filter(University.id == university_id)
+    if university_ids is not None:
+        if university_ids:
+            universities_query = universities_query.filter(University.id.in_(sorted(university_ids)))
+        else:
+            universities_query = universities_query.filter(false())
 
-    programs = _scoped_program_query(db, university_id).all()
-    members = _scoped_query(db.query(Member), Member, university_id).all()
-    updates_query = _scoped_query(db.query(ProgramUpdate), ProgramUpdate, university_id)
-    funding = _scoped_query(db.query(FundingRecord), FundingRecord, university_id).all()
+    programs = _scoped_program_query(db, university_ids).all()
+    members = _scoped_query(db.query(Member), Member, university_ids).all()
+    updates_query = _scoped_query(db.query(ProgramUpdate), ProgramUpdate, university_ids)
+    funding = _scoped_query(db.query(FundingRecord), FundingRecord, university_ids).all()
     income_total = sum(item.amount for item in funding if _funding_direction(item) != "outflow")
     expense_total = sum(item.amount for item in funding if _funding_direction(item) == "outflow")
     now = datetime.utcnow()
@@ -81,10 +88,13 @@ def dashboard_overview(db: Session, university_id: int | None = None):
     }
 
 
-def university_performance(db: Session, university_id: int | None = None):
+def university_performance(db: Session, university_ids: set[int] | None = None):
     universities_query = db.query(University).filter(University.is_active.is_(True))
-    if university_id:
-        universities_query = universities_query.filter(University.id == university_id)
+    if university_ids is not None:
+        if university_ids:
+            universities_query = universities_query.filter(University.id.in_(sorted(university_ids)))
+        else:
+            universities_query = universities_query.filter(false())
 
     items = []
     for university in universities_query.order_by(University.name.asc()).all():
@@ -114,8 +124,8 @@ def university_performance(db: Session, university_id: int | None = None):
     return items
 
 
-def program_performance(db: Session, university_id: int | None = None):
-    programs_query = _scoped_program_query(db, university_id).order_by(Program.name.asc())
+def program_performance(db: Session, university_ids: set[int] | None = None):
+    programs_query = _scoped_program_query(db, university_ids).order_by(Program.name.asc())
 
     results = []
     for program in programs_query.all():
@@ -136,8 +146,8 @@ def program_performance(db: Session, university_id: int | None = None):
     return results
 
 
-def funding_breakdown(db: Session, university_id: int | None = None):
-    funding = _scoped_query(db.query(FundingRecord), FundingRecord, university_id).all()
+def funding_breakdown(db: Session, university_ids: set[int] | None = None):
+    funding = _scoped_query(db.query(FundingRecord), FundingRecord, university_ids).all()
 
     income_total = sum(item.amount for item in funding if _funding_direction(item) != "outflow")
     expense_total = sum(item.amount for item in funding if _funding_direction(item) == "outflow")
@@ -164,8 +174,8 @@ def funding_breakdown(db: Session, university_id: int | None = None):
     }
 
 
-def member_breakdown(db: Session, group_by: str, university_id: int | None = None):
-    members = _scoped_query(db.query(Member), Member, university_id).all()
+def member_breakdown(db: Session, group_by: str, university_ids: set[int] | None = None):
+    members = _scoped_query(db.query(Member), Member, university_ids).all()
     counts = defaultdict(int)
 
     for member in members:

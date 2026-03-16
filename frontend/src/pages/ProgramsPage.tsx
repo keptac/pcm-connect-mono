@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 
 import { mandatoryProgramsApi, programUpdatesApi, programsApi, reportingPeriodsApi, universitiesApi } from "../api/endpoints";
+import { UniversitySelectOptions } from "../components/UniversitySelectOptions";
 import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatCurrency, formatDate, formatNumber } from "../lib/format";
@@ -118,7 +119,7 @@ function isProgramDeleteLocked(program: any, updateCount: number) {
 export default function ProgramsPage() {
   const client = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { user, roles, canSelectUniversity, scopedUniversityId, defaultUniversityId } = useUniversityScope();
+  const { user, roles, canSelectUniversity, scopedUniversityId, defaultUniversityId, scopeKey, scopeParams } = useUniversityScope();
   const canViewPortfolio = roles.some((role) => portfolioRoles.includes(role));
   const canViewBroadcasts = roles.some((role) => broadcastRoles.includes(role));
   const canViewCalendar = roles.some((role) => calendarRoles.includes(role));
@@ -141,13 +142,13 @@ export default function ProgramsPage() {
   const activeView = viewOptions.some((option) => option.key === requestedView) ? (requestedView as ProgramsView) : defaultView;
 
   const { data: programs } = useQuery({
-    queryKey: ["programs", scopedUniversityId],
-    queryFn: () => programsApi.list(scopedUniversityId),
+    queryKey: ["programs", scopeKey],
+    queryFn: () => programsApi.list(scopeParams),
     enabled: canViewPortfolio || canViewBroadcasts || canViewCalendar
   });
   const { data: universities } = useQuery({
-    queryKey: ["universities"],
-    queryFn: universitiesApi.list,
+    queryKey: ["universities", scopeKey],
+    queryFn: () => universitiesApi.list(scopeParams),
     enabled: canViewPortfolio || canViewBroadcasts || canViewCoverage
   });
   const { data: mandatoryPrograms } = useQuery({
@@ -161,8 +162,8 @@ export default function ProgramsPage() {
     enabled: canViewCoverage
   });
   const { data: updates } = useQuery({
-    queryKey: ["program-updates", scopedUniversityId],
-    queryFn: () => programUpdatesApi.list({ universityId: scopedUniversityId }),
+    queryKey: ["program-updates", scopeKey],
+    queryFn: () => programUpdatesApi.list(scopeParams),
     enabled: canViewPortfolio
   });
 
@@ -235,7 +236,7 @@ export default function ProgramsPage() {
   const coverageRows = useMemo(() => {
     if (!hasGlobalAccess || mandatoryEventCatalog.length === 0) return [];
 
-    const visibleUniversities = (universities || []).filter((university: any) => !scopedUniversityId || university.id === scopedUniversityId);
+    const visibleUniversities = universities || [];
     const programsInPeriod = (programs || []).filter((program: any) => {
       return program.status !== "archived" && programFallsInPeriod(program, selectedCoveragePeriod, coveragePeriod);
     });
@@ -280,7 +281,7 @@ export default function ProgramsPage() {
         left.scheduledCount - right.scheduledCount ||
         String(left.name || "").localeCompare(String(right.name || ""))
       ));
-  }, [coveragePeriod, hasGlobalAccess, mandatoryEventCatalog, programs, scopedUniversityId, selectedCoveragePeriod, universities]);
+  }, [coveragePeriod, hasGlobalAccess, mandatoryEventCatalog, programs, selectedCoveragePeriod, universities]);
   const incompleteCoverageRows = useMemo(
     () => coverageRows.filter((row: any) => row.missingCount > 0),
     [coverageRows]
@@ -718,11 +719,11 @@ export default function ProgramsPage() {
                       }));
                     }}
                   >
-                    <option value="">Select university or campus</option>
-                    {hasGlobalAccess ? <option value={NETWORK_SCOPE}>{NETWORK_LABEL}</option> : null}
-                    {universities?.map((university: any) => (
-                      <option key={university.id} value={university.id}>{university.name}</option>
-                    ))}
+                    <UniversitySelectOptions
+                      universities={universities}
+                      emptyOptionLabel="Select university or campus"
+                      extraOptions={hasGlobalAccess ? <option value={NETWORK_SCOPE}>{NETWORK_LABEL}</option> : null}
+                    />
                   </select>
                 </label>
               ) : (

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from ...core.config import settings
 from ...db.session import get_db
-from ...models import MandatoryProgram, Program, ProgramUpdate, ReportingPeriod, University
+from ...models import Conference, MandatoryProgram, Program, ProgramUpdate, ReportingPeriod, Union, University
 from ...schemas import (
     CondensedMissionReportRead,
     ProgramImpactUpdateCreate,
@@ -22,7 +22,14 @@ from ...schemas import (
 from ...services.audit_log import log_action
 from ...services.program_update_consolidated_exports import build_consolidated_program_update_pdf
 from ...services.program_update_exports import build_program_update_pdf, build_program_update_report_pack
-from ..deps import GENERAL_USER_ROLES, PROGRAM_ROLES, require_role, resolve_university_scope
+from ..deps import (
+    GENERAL_USER_ROLES,
+    PROGRAM_ROLES,
+    apply_university_scope_filter,
+    require_role,
+    resolve_university_scope,
+    resolve_visible_university_ids,
+)
 
 router = APIRouter(prefix="/program-updates", tags=["program-updates"])
 
@@ -355,7 +362,7 @@ def _serialize(update: ProgramUpdate, request: Request) -> ProgramImpactUpdateRe
 
 def _build_updates_query(
     db: Session,
-    scoped_university_id: int | None,
+    scoped_university_ids: set[int] | None,
     program_id: int | None = None,
     reporting_period: str | None = None,
 ):
@@ -368,8 +375,7 @@ def _build_updates_query(
         )
         .order_by(ProgramUpdate.reporting_date.desc(), ProgramUpdate.created_at.desc())
     )
-    if scoped_university_id:
-        query = query.filter(ProgramUpdate.university_id == scoped_university_id)
+    query = apply_university_scope_filter(query, ProgramUpdate, scoped_university_ids)
     if program_id:
         query = query.filter(ProgramUpdate.program_id == program_id)
     if reporting_period:
@@ -430,26 +436,42 @@ def _condense_text(value: str | None, limit: int = 140) -> str | None:
 @router.get("", response_model=list[ProgramImpactUpdateRead])
 def list_updates(
     university_id: int | None = None,
+    conference_id: int | None = None,
+    union_id: int | None = None,
     program_id: int | None = None,
     reporting_period: str | None = None,
     request: Request = None,
     db: Session = Depends(get_db),
     user=Depends(require_role(PROGRAM_ROLES)),
 ):
-    scoped_university_id = resolve_university_scope(user, university_id)
-    query = _build_updates_query(db, scoped_university_id, program_id=program_id, reporting_period=reporting_period)
+    scoped_university_ids = resolve_visible_university_ids(
+        db,
+        user,
+        requested_university_id=university_id,
+        requested_conference_id=conference_id,
+        requested_union_id=union_id,
+    )
+    query = _build_updates_query(db, scoped_university_ids, program_id=program_id, reporting_period=reporting_period)
     return [_serialize(item, request) for item in query.all()]
 
 
 @router.get("/condensed", response_model=list[CondensedMissionReportRead])
 def list_condensed_updates(
     university_id: int | None = None,
+    conference_id: int | None = None,
+    union_id: int | None = None,
     reporting_period: str | None = None,
     db: Session = Depends(get_db),
     user=Depends(require_role(GENERAL_USER_ROLES)),
 ):
-    scoped_university_id = resolve_university_scope(user, university_id)
-    updates = _build_updates_query(db, scoped_university_id, reporting_period=reporting_period).all()
+    scoped_university_ids = resolve_visible_university_ids(
+        db,
+        user,
+        requested_university_id=university_id,
+        requested_conference_id=conference_id,
+        requested_union_id=union_id,
+    )
+    updates = _build_updates_query(db, scoped_university_ids, reporting_period=reporting_period).all()
     period_labels = {
         item.code: item.label
         for item in db.query(ReportingPeriod).order_by(ReportingPeriod.sort_order.asc(), ReportingPeriod.code.asc()).all()
@@ -523,15 +545,23 @@ def list_condensed_updates(
 @router.get("/report-pack")
 def download_report_pack(
     university_id: int | None = None,
+    conference_id: int | None = None,
+    union_id: int | None = None,
     program_id: int | None = None,
     reporting_period: str | None = None,
     db: Session = Depends(get_db),
     user=Depends(require_role(PROGRAM_ROLES)),
 ):
-    scoped_university_id = resolve_university_scope(user, university_id)
+    scoped_university_ids = resolve_visible_university_ids(
+        db,
+        user,
+        requested_university_id=university_id,
+        requested_conference_id=conference_id,
+        requested_union_id=union_id,
+    )
     updates = _build_updates_query(
         db,
-        scoped_university_id,
+        scoped_university_ids,
         program_id=program_id,
         reporting_period=reporting_period,
     ).all()
@@ -540,8 +570,16 @@ def download_report_pack(
 
     zip_bytes = build_program_update_report_pack(updates)
     scope_label = "all-universities"
-    if scoped_university_id and updates[0].university:
+    if scoped_university_ids and len(scoped_university_ids) == 1 and updates[0].university:
         scope_label = updates[0].university.short_code or updates[0].university.name.lower().replace(" ", "-")
+    elif conference_id:
+        conference = db.query(Conference).filter(Conference.id == conference_id).first()
+        if conference:
+            scope_label = conference.name.lower().replace(" ", "-")
+    elif union_id:
+        union = db.query(Union).filter(Union.id == union_id).first()
+        if union:
+            scope_label = union.name.lower().replace(" ", "-")
     period_label = reporting_period or "all-periods"
     headers = {
         "Content-Disposition": f'attachment; filename="impact-report-pack_{scope_label}_{period_label}.zip"'
@@ -552,15 +590,23 @@ def download_report_pack(
 @router.get("/consolidated-report-pdf")
 def download_consolidated_report_pdf(
     university_id: int | None = None,
+    conference_id: int | None = None,
+    union_id: int | None = None,
     program_id: int | None = None,
     reporting_period: str | None = None,
     db: Session = Depends(get_db),
     user=Depends(require_role(PROGRAM_ROLES)),
 ):
-    scoped_university_id = resolve_university_scope(user, university_id)
+    scoped_university_ids = resolve_visible_university_ids(
+        db,
+        user,
+        requested_university_id=university_id,
+        requested_conference_id=conference_id,
+        requested_union_id=union_id,
+    )
     updates = _build_updates_query(
         db,
-        scoped_university_id,
+        scoped_university_ids,
         program_id=program_id,
         reporting_period=reporting_period,
     ).all()
@@ -569,8 +615,16 @@ def download_consolidated_report_pdf(
 
     pdf_bytes = build_consolidated_program_update_pdf(updates)
     scope_label = "all-campuses"
-    if scoped_university_id and updates[0].university:
+    if scoped_university_ids and len(scoped_university_ids) == 1 and updates[0].university:
         scope_label = updates[0].university.short_code or updates[0].university.name.lower().replace(" ", "-")
+    elif conference_id:
+        conference = db.query(Conference).filter(Conference.id == conference_id).first()
+        if conference:
+            scope_label = conference.name.lower().replace(" ", "-")
+    elif union_id:
+        union = db.query(Union).filter(Union.id == union_id).first()
+        if union:
+            scope_label = union.name.lower().replace(" ", "-")
     period_label = reporting_period or "all-periods"
     headers = {
         "Content-Disposition": f'attachment; filename="impact-report-consolidated_{scope_label}_{period_label}.pdf"'
@@ -587,7 +641,7 @@ def download_single_report_pdf(
     update = _get_update_with_relationships(db, update_id)
     if not update:
         raise HTTPException(status_code=404, detail="Program update not found")
-    resolve_university_scope(user, update.university_id)
+    resolve_university_scope(db, user, update.university_id)
 
     pdf_bytes = build_program_update_pdf(update)
     file_label = (update.event_detail or update.event_name or update.title or f"update_{update.id}").strip().lower()
@@ -606,7 +660,7 @@ async def create_update(
     user=Depends(require_role(PROGRAM_ROLES)),
 ):
     payload, attachments, meeting_minutes_attachments, _, meeting_minutes_metadata = await _parse_payload_from_request(request, patch=False)
-    scoped_university_id = resolve_university_scope(user, payload.university_id)
+    scoped_university_id = resolve_university_scope(db, user, payload.university_id)
     program = None
     if payload.program_id is not None:
         program = db.query(Program).filter(Program.id == payload.program_id).first()
@@ -657,7 +711,7 @@ async def update_program_update(
     previous_program_id = update.program_id
 
     target_university_id = payload.university_id or update.university_id
-    scoped_university_id = resolve_university_scope(user, target_university_id)
+    scoped_university_id = resolve_university_scope(db, user, target_university_id)
 
     updates = payload.model_dump(exclude_unset=True)
     target_program_id = updates["program_id"] if "program_id" in updates else update.program_id
@@ -737,7 +791,7 @@ def delete_program_update(
     update = db.query(ProgramUpdate).filter(ProgramUpdate.id == update_id).first()
     if not update:
         raise HTTPException(status_code=404, detail="Program update not found")
-    resolve_university_scope(user, update.university_id)
+    resolve_university_scope(db, user, update.university_id)
     previous_program_id = update.program_id
 
     _delete_attachment_files(_load_attachments(update))

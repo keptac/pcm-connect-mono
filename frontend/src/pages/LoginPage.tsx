@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { authApi, messagesApi, universitiesApi } from "../api/endpoints";
+import { UniversitySelectOptions } from "../components/UniversitySelectOptions";
 import adventistSymbolWhite from "../images/adventist-symbol--white.png";
 import heroImage from "../images/background-image-1.jpg";
 import pcmLogo from "../images/pcm_logo.png";
@@ -249,10 +250,7 @@ export default function LoginPage() {
                     value={selectedUniversityId}
                     onChange={(event) => setSelectedUniversityId(event.target.value)}
                   >
-                    <option value="">Select a university or campus</option>
-                    {universitiesQuery.data?.map((university: any) => (
-                      <option key={university.id} value={university.id}>{university.name}</option>
-                    ))}
+                    <UniversitySelectOptions universities={universitiesQuery.data} emptyOptionLabel="Select a university or campus" />
                   </select>
                 </label>
 

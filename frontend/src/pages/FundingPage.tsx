@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { fundingApi, programsApi, universitiesApi } from "../api/endpoints";
+import { UniversitySelectOptions } from "../components/UniversitySelectOptions";
 import { EmptyState, MetricCard, ModalDialog, PageHeader, Panel, StatusBadge, TableActionButton, TablePagination, usePagination } from "../components/ui";
 import { exportRowsAsCsv } from "../lib/export";
 import { formatCurrency, formatDate, formatNumber } from "../lib/format";
@@ -89,25 +90,26 @@ function matchesAudienceFilter(audience: string, filter: string) {
 
 export default function FundingPage() {
   const client = useQueryClient();
-  const { roles, canSelectUniversity, scopedUniversityId, defaultUniversityId, isUniversityScoped } = useUniversityScope();
+  const { roles, canSelectUniversity, scopedUniversityId, defaultUniversityId, isUniversityScoped, scopeKey, scopeParams, scopeType } = useUniversityScope();
   const canView = roles.some((role) => ["super_admin", "student_admin", "alumni_admin", "finance_officer", "students_finance", "executive", "director"].includes(role));
   const canManageRecords = roles.some((role) => ["super_admin", "finance_officer", "students_finance", "executive"].includes(role));
   const canUseHq = roles.some((role) => ["super_admin", "executive"].includes(role)) && !isUniversityScoped;
   const canSelectFundingScope = canSelectUniversity || (roles.includes("executive") && !isUniversityScoped);
+  const financeListScope = canUseHq && scopeType === "network" ? null : scopeParams;
 
   const { data: funding } = useQuery({
-    queryKey: ["funding", canUseHq ? "all" : scopedUniversityId],
-    queryFn: () => fundingApi.list(canUseHq ? null : scopedUniversityId),
+    queryKey: ["funding", canUseHq && scopeType === "network" ? "all" : scopeKey],
+    queryFn: () => fundingApi.list(financeListScope),
     enabled: canView
   });
   const { data: programs } = useQuery({
-    queryKey: ["programs", canUseHq ? "all-finance" : scopedUniversityId],
-    queryFn: () => programsApi.list(canUseHq ? null : scopedUniversityId),
+    queryKey: ["programs", canUseHq && scopeType === "network" ? "all-finance" : scopeKey],
+    queryFn: () => programsApi.list(financeListScope),
     enabled: canView
   });
   const { data: universities } = useQuery({
-    queryKey: ["universities"],
-    queryFn: universitiesApi.list,
+    queryKey: ["universities", canUseHq && scopeType === "network" ? "all-finance" : scopeKey],
+    queryFn: () => universitiesApi.list(financeListScope),
     enabled: canView
   });
 
@@ -622,10 +624,11 @@ export default function FundingPage() {
                     value={form.university_id}
                     onChange={(event) => setForm({ ...form, university_id: event.target.value, program_id: "" })}
                   >
-                    {canUseHq ? <option value={HQ_SCOPE}>PCM Office / National Office</option> : <option value="">Select university or campus</option>}
-                    {universities?.map((university: any) => (
-                      <option key={university.id} value={university.id}>{university.name}</option>
-                    ))}
+                    <UniversitySelectOptions
+                      universities={universities}
+                      emptyOptionLabel={canUseHq ? undefined : "Select university or campus"}
+                      extraOptions={canUseHq ? <option value={HQ_SCOPE}>PCM Office / National Office</option> : null}
+                    />
                   </select>
                 </label>
               ) : (
