@@ -1401,42 +1401,6 @@ def _ensure_marketplace_demo_listings(db: Session, owner: User) -> None:
 
     listing_specs = [
         {
-            "title": "Bulk printing and banner production",
-            "listing_type": "offer",
-            "category": "Media and printing",
-            "price_text": "Quoted per order",
-            "status": "active",
-            "description": "Reliable printing for outreach flyers, banners, pull-up stands, and event backdrops for PCM activities.",
-            "university_index": 0,
-        },
-        {
-            "title": "Need affordable transport for evangelism weekend",
-            "listing_type": "need",
-            "category": "Transport and logistics",
-            "price_text": "Budget available on request",
-            "status": "active",
-            "description": "Looking for a trusted bus or kombi provider to move students and supplies for an off-campus mission weekend.",
-            "university_index": 1,
-        },
-        {
-            "title": "Career mentorship and CV clinic",
-            "listing_type": "offer",
-            "category": "Professional services",
-            "price_text": "Volunteer / honorarium by arrangement",
-            "status": "active",
-            "description": "Support for finalists and recent graduates with CV polishing, interview coaching, LinkedIn setup, and career navigation.",
-            "university_index": 2,
-        },
-        {
-            "title": "Need branded t-shirts and caps for congress",
-            "listing_type": "need",
-            "category": "Apparel and merchandise",
-            "price_text": "Open to supplier proposals",
-            "status": "active",
-            "description": "Seeking a supplier who can handle branded PCM apparel in moderate volume with reliable turnaround times.",
-            "university_index": 3,
-        },
-        {
             "title": "Event catering and refreshment packs",
             "listing_type": "offer",
             "category": "Food and hospitality",
@@ -1549,4 +1513,4 @@ def seed_data(db: Session):
     _ensure_academic_institutions(db)
     _ensure_reporting_periods(db, admin)
     _ensure_mandatory_programs(db, admin)
-    _ensure_marketplace_demo_listings(db, admin)
+    # _ensure_marketplace_demo_listings(db, admin)
