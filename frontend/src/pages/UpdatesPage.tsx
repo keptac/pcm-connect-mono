@@ -831,7 +831,7 @@ export default function UpdatesPage() {
               ) : null}
 
               <label className="field-shell">
-                <span className="field-label">Summary</span>
+                <span className="field-label">Report Details</span>
                 <textarea className="field-input min-h-[120px]" value={form.summary} onChange={(event) => setForm({ ...form, summary: event.target.value })} />
               </label>
 
@@ -846,7 +846,7 @@ export default function UpdatesPage() {
                     <textarea className="field-input min-h-[110px]" value={form.challenges} onChange={(event) => setForm({ ...form, challenges: event.target.value })} />
                   </label>
                   <label className="field-shell">
-                    <span className="field-label">Next steps</span>
+                    <span className="field-label">Next/Recommended steps</span>
                     <textarea className="field-input min-h-[110px]" value={form.next_steps} onChange={(event) => setForm({ ...form, next_steps: event.target.value })} />
                   </label>
                 </div>
@@ -855,15 +855,15 @@ export default function UpdatesPage() {
               {!isMeetingEvent ? (
                 <div className="grid gap-4 md:grid-cols-3">
                   <label className="field-shell">
-                    <span className="field-label">Beneficiaries reached</span>
+                    <span className="field-label">Total baptisms</span>
                     <input className="field-input" value={form.beneficiaries_reached} onChange={(event) => setForm({ ...form, beneficiaries_reached: event.target.value })} />
                   </label>
                   <label className="field-shell">
-                    <span className="field-label">Volunteers involved</span>
+                    <span className="field-label">Average missionaries involved</span>
                     <input className="field-input" value={form.volunteers_involved} onChange={(event) => setForm({ ...form, volunteers_involved: event.target.value })} />
                   </label>
                   <label className="field-shell">
-                    <span className="field-label">Funds used</span>
+                    <span className="field-label">Estimate funds used</span>
                     <input className="field-input" value={form.funds_used} onChange={(event) => setForm({ ...form, funds_used: event.target.value })} />
                   </label>
                 </div>
