@@ -1513,4 +1513,4 @@ def seed_data(db: Session):
     _ensure_academic_institutions(db)
     _ensure_reporting_periods(db, admin)
     _ensure_mandatory_programs(db, admin)
-    # _ensure_marketplace_demo_listings(db, admin)
+    _ensure_marketplace_demo_listings(db, admin)
